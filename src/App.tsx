@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 import {
   Calendar,
   ChevronLeft,
@@ -9,10 +9,15 @@ import {
   Trash2,
   User,
   TrendingUp,
+  LogOut,
+  Loader2,
 } from "lucide-react";
 import { jsPDF } from "jspdf";
 import autoTable from "jspdf-autotable";
 import * as XLSX from "xlsx";
+import { Session } from "@supabase/supabase-js";
+import { supabase } from "./lib/supabase";
+import Auth from "./components/Auth";
 
 const START_HOUR = 6;
 const END_HOUR = 23; // 23h00 inclus
@@ -31,6 +36,9 @@ export default function App() {
   const [isErasing, setIsErasing] = useState(false);
   const [collabName, setCollabName] = useState("");
   const [currentDate, setCurrentDate] = useState(new Date());
+  const [session, setSession] = useState<Session | null>(null);
+  const [authLoading, setAuthLoading] = useState(true);
+  const [dataLoading, setDataLoading] = useState(false);
 
   // Labels horaires 06:00, 06:30, ...
   const timeLabels = Array.from({ length: TOTAL_SLOTS }, (_, i) => {
@@ -53,6 +61,80 @@ export default function App() {
     d.setDate(monday.getDate() + i);
     return d;
   });
+
+  useEffect(() => {
+    supabase.auth.getSession().then(({ data: { session } }) => {
+      setSession(session);
+      if (session?.user) {
+        const name = session.user.user_metadata.full_name || session.user.email?.split('@')[0];
+        if (name) setCollabName(name);
+      }
+      setAuthLoading(false);
+    });
+
+    const {
+      data: { subscription },
+    } = supabase.auth.onAuthStateChange((_event, session) => {
+      setSession(session);
+      if (session?.user) {
+        const name = session.user.user_metadata.full_name || session.user.email?.split('@')[0];
+        if (name) setCollabName(name);
+      }
+    });
+
+    return () => subscription.unsubscribe();
+  }, []);
+
+  const fetchWeekData = async () => {
+    if (!session) return;
+    setDataLoading(true);
+    try {
+      const dateStr = monday.toISOString().split('T')[0];
+      const { data, error } = await supabase
+        .from('timesheets')
+        .select('grid_data')
+        .eq('user_id', session.user.id)
+        .eq('week_start_date', dateStr)
+        .single();
+
+      if (error && error.code !== 'PGRST116') throw error;
+
+      if (data) {
+        setGrid(data.grid_data);
+      } else {
+        setGrid(Array(7).fill(null).map(() => Array(TOTAL_SLOTS).fill(false)));
+      }
+    } catch (error) {
+      console.error('Error fetching data:', error);
+    } finally {
+      setDataLoading(false);
+    }
+  };
+
+  const saveWeekData = async (currentGrid: boolean[][]) => {
+    if (!session) return;
+    try {
+      const dateStr = monday.toISOString().split('T')[0];
+      const { error } = await supabase
+        .from('timesheets')
+        .upsert({
+          user_id: session.user.id,
+          week_start_date: dateStr,
+          grid_data: currentGrid,
+          updated_at: new Date().toISOString(),
+        }, { onConflict: 'user_id,week_start_date' });
+
+      if (error) throw error;
+    } catch (error) {
+      console.error('Error saving data:', error);
+    }
+  };
+
+  useEffect(() => {
+    if (session) {
+      fetchWeekData();
+    }
+  }, [session, currentDate]);
 
   const updateGrid = (day: number, slot: number, val: boolean) => {
     setGrid((prev) => {
@@ -86,6 +168,9 @@ export default function App() {
   };
 
   const handleMouseUp = () => {
+    if (isDragging) {
+      saveWeekData(grid);
+    }
     setIsDragging(false);
     setDragStart(null);
   };
@@ -98,11 +183,11 @@ export default function App() {
 
   const clearGrid = () => {
     if (window.confirm("Voulez-vous vraiment effacer tout le planning ?")) {
-      setGrid(
-        Array(7)
-          .fill(null)
-          .map(() => Array(TOTAL_SLOTS).fill(false)),
-      );
+      const newGrid = Array(7)
+        .fill(null)
+        .map(() => Array(TOTAL_SLOTS).fill(false));
+      setGrid(newGrid);
+      saveWeekData(newGrid);
     }
   };
 
@@ -279,6 +364,18 @@ export default function App() {
     XLSX.writeFile(wb, "releve_heures.xlsx");
   };
 
+  if (authLoading) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-slate-50">
+        <Loader2 className="animate-spin text-sky-600" size={40} />
+      </div>
+    );
+  }
+
+  if (!session) {
+    return <Auth />;
+  }
+
   return (
     <div
       className="min-h-screen bg-slate-50 text-slate-900 font-sans selection:bg-sky-200"
@@ -323,6 +420,7 @@ export default function App() {
             </div>
 
             <div className="flex items-center gap-2 flex-wrap justify-end">
+              {dataLoading && <Loader2 className="animate-spin text-sky-600 mr-2" size={20} />}
               <div className="flex items-center gap-3 bg-slate-100 p-2 rounded-lg border border-slate-200">
                 <User size={18} className="text-slate-400 ml-2" />
                 <div className="flex flex-col">
@@ -358,6 +456,14 @@ export default function App() {
                 className="flex items-center gap-2 px-4 py-2 bg-sky-600 hover:bg-sky-700 text-white rounded-lg font-medium text-sm shadow-md shadow-sky-200 transition-all active:scale-95"
               >
                 <Download size={16} /> PDF
+              </button>
+              <div className="h-6 w-px bg-slate-300 mx-1" />
+              <button
+                onClick={() => supabase.auth.signOut()}
+                className="p-2 text-slate-500 hover:bg-slate-100 rounded-lg transition-colors"
+                title="Se déconnecter"
+              >
+                <LogOut size={20} />
               </button>
             </div>
           </div>
@@ -424,17 +530,15 @@ export default function App() {
               return (
                 <div
                   key={day}
-                  className={`p-3 text-center border-r border-slate-100 last:border-r-0 ${
-                    isToday ? "bg-sky-50" : "bg-white"
-                  }`}
+                  className={`p-3 text-center border-r border-slate-100 last:border-r-0 ${isToday ? "bg-sky-50" : "bg-white"
+                    }`}
                 >
                   <p className={`text-xs font-bold uppercase mb-1 ${isToday ? "text-sky-600" : "text-slate-400"}`}>
                     {day}
                   </p>
                   <div
-                    className={`mx-auto w-8 h-8 flex items-center justify-center rounded-full font-bold text-sm ${
-                      isToday ? "bg-sky-600 text-white" : "text-slate-700"
-                    }`}
+                    className={`mx-auto w-8 h-8 flex items-center justify-center rounded-full font-bold text-sm ${isToday ? "bg-sky-600 text-white" : "text-slate-700"
+                      }`}
                   >
                     {weekDates[i].getDate()}
                   </div>
@@ -445,14 +549,11 @@ export default function App() {
 
           <div className="relative">
             {timeLabels.map((time, slotIndex) => {
-              const showLabel = slotIndex % 2 === 0;
               const isHourLine = slotIndex % 2 === 0;
               return (
                 <div key={time} className="grid grid-cols-[80px_1fr_1fr_1fr_1fr_1fr_1fr_1fr] h-8">
                   <div
-                    className={`border-r border-slate-200 text-right pr-3 text-xs text-slate-400 relative -top-2 ${
-                      !showLabel && "invisible"
-                    }`}
+                    className="border-r border-slate-300 text-right pr-3 text-xs text-slate-500 font-medium relative -top-2"
                   >
                     {time}
                   </div>
@@ -474,14 +575,13 @@ export default function App() {
                         key={`${dayIndex}-${slotIndex}`}
                         onMouseDown={() => handleMouseDown(dayIndex, slotIndex)}
                         onMouseEnter={() => handleMouseEnter(dayIndex, slotIndex)}
-                        className={`border-r border-slate-100 last:border-r-0 cursor-pointer transition-colors relative ${
-                          isHourLine ? "border-b border-slate-100" : ""
-                        } hover:bg-slate-50`}
+                        className={`border-r border-slate-300 last:border-r-0 cursor-pointer transition-colors relative ${isHourLine ? "border-b border-slate-300" : "border-b border-slate-200"
+                          } hover:bg-slate-100`}
                       >
                         <div
                           className={`
                             absolute inset-0.5 transition-all duration-150 pointer-events-none
-                            ${isActive ? "bg-sky-500 shadow-sm" : "bg-transparent"}
+                            ${isActive ? "bg-sky-600 shadow-sm" : "bg-transparent"}
                             ${roundedClass}
                           `}
                         />
@@ -494,6 +594,6 @@ export default function App() {
           </div>
         </div>
       </main>
-    </div>
+    </div >
   );
 }
