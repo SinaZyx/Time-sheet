@@ -647,7 +647,7 @@ export default function App() {
               return (
                 <div key={time} className="grid grid-cols-[80px_1fr_1fr_1fr_1fr_1fr_1fr_1fr] h-8">
                   <div
-                    className="border-r border-slate-300 text-right pr-3 text-xs text-slate-500 font-medium relative -top-2"
+                    className="border-r border-slate-300 pr-3 text-xs text-slate-500 font-medium flex items-center justify-end"
                   >
                     {time}
                   </div>

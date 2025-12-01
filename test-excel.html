@@ -1,0 +1,362 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Test Export Excel</title>
+    <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            max-width: 800px;
+            margin: 50px auto;
+            padding: 20px;
+        }
+        button {
+            background: #0284c7;
+            color: white;
+            padding: 15px 30px;
+            border: none;
+            border-radius: 8px;
+            font-size: 16px;
+            cursor: pointer;
+        }
+        button:hover {
+            background: #0369a1;
+        }
+        .info {
+            background: #f0f9ff;
+            border: 1px solid #0284c7;
+            padding: 15px;
+            border-radius: 8px;
+            margin: 20px 0;
+        }
+        .success {
+            background: #f0fdf4;
+            border: 1px solid #22c55e;
+            color: #15803d;
+        }
+        .error {
+            background: #fef2f2;
+            border: 1px solid #ef4444;
+            color: #991b1b;
+        }
+        pre {
+            background: #1e293b;
+            color: #e2e8f0;
+            padding: 15px;
+            border-radius: 8px;
+            overflow-x: auto;
+        }
+    </style>
+</head>
+<body>
+    <h1>Test Export Excel - Feuilles de temps</h1>
+
+    <div class="info">
+        <h3>Instructions :</h3>
+        <ol>
+            <li>Cliquez sur le bouton "Générer Excel de test"</li>
+            <li>Un fichier Excel sera téléchargé avec 3 employés fictifs</li>
+            <li>Ouvrez le fichier pour vérifier qu'il contient 3 feuilles : Details, Resume, Statistiques</li>
+        </ol>
+    </div>
+
+    <button onclick="testExcelExport()">Générer Excel de test</button>
+
+    <div id="result" style="margin-top: 20px;"></div>
+
+    <h3>Données de test :</h3>
+    <pre id="testData"></pre>
+
+    <script>
+        const START_HOUR = 6;
+        const DAYS = ["Lundi", "Mardi", "Mercredi", "Jeudi", "Vendredi", "Samedi", "Dimanche"];
+
+        // Créer des données de test
+        function createTestData() {
+            const employees = [
+                { name: "Mathias Trochon", email: "mathias@amb-elec.fr" },
+                { name: "Amandine Chambon", email: "amandine@amb-elec.fr" },
+                { name: "Mathias Gmail", email: "trochon.mathias@gmail.com" }
+            ];
+
+            const timesheets = employees.map(emp => {
+                // Créer une grille de 7 jours x 30 créneaux (15 heures x 2 créneaux/heure)
+                const gridData = [];
+                for (let day = 0; day < 7; day++) {
+                    const dayGrid = new Array(30).fill(false);
+                    // Simuler une journée de travail 8h-17h (créneaux 4 à 22)
+                    if (day < 5) { // Lundi à Vendredi
+                        for (let i = 4; i < 22; i++) {
+                            dayGrid[i] = true;
+                        }
+                    } else if (day === 5) { // Samedi - demi-journée
+                        for (let i = 4; i < 12; i++) {
+                            dayGrid[i] = true;
+                        }
+                    }
+                    // Dimanche = repos (tout à false)
+                    gridData.push(dayGrid);
+                }
+
+                return {
+                    employeeName: emp.name,
+                    weekStartDate: new Date(2025, 0, 6), // Semaine du 6 janvier 2025
+                    gridData: gridData
+                };
+            });
+
+            return timesheets;
+        }
+
+        // Calculer les heures pour un jour
+        function getDayHours(grid, slotsPerHour = 2) {
+            return grid.filter(Boolean).length * (1 / slotsPerHour);
+        }
+
+        // Formater une plage horaire
+        function formatRange(startSlot, endSlot) {
+            const startMin = START_HOUR * 60 + startSlot * 30;
+            const endMin = START_HOUR * 60 + endSlot * 30;
+            const formatTime = (min) => {
+                const h = Math.floor(min / 60);
+                const m = min % 60;
+                return `${h.toString().padStart(2, "0")}:${m.toString().padStart(2, "0")}`;
+            };
+            return `${formatTime(startMin)} - ${formatTime(endMin)}`;
+        }
+
+        // Obtenir les plages horaires d'un jour
+        function getRangesText(dayGrid) {
+            const ranges = [];
+            let start = null;
+
+            for (let i = 0; i < dayGrid.length; i++) {
+                if (dayGrid[i] && start === null) {
+                    start = i;
+                } else if (!dayGrid[i] && start !== null) {
+                    ranges.push(formatRange(start, i));
+                    start = null;
+                }
+            }
+            if (start !== null) ranges.push(formatRange(start, dayGrid.length));
+            return ranges.length > 0 ? ranges.join(" / ") : "Repos";
+        }
+
+        // Générer les dates de la semaine
+        function getWeekDates(monday) {
+            return Array.from({ length: 7 }, (_, i) => {
+                const d = new Date(monday);
+                d.setDate(monday.getDate() + i);
+                return d;
+            });
+        }
+
+        // Fonction d'export Excel (copie de excelExports.ts)
+        function generateConsolidatedExcel(timesheets) {
+            const wb = XLSX.utils.book_new();
+
+            // Feuille 1: Vue détaillée par employé et par jour
+            const detailedData = [];
+
+            timesheets.forEach((data) => {
+                const { employeeName, weekStartDate, gridData } = data;
+                const weekDates = getWeekDates(weekStartDate);
+                const weekStr = `${weekStartDate.toLocaleDateString("fr-FR")} - ${weekDates[6].toLocaleDateString("fr-FR")}`;
+
+                weekDates.forEach((date, dayIndex) => {
+                    const hours = getDayHours(gridData[dayIndex]);
+                    const supp = hours > 7 ? hours - 7 : 0;
+
+                    detailedData.push({
+                        "Employé": employeeName,
+                        "Semaine": weekStr,
+                        "Jour": DAYS[dayIndex],
+                        "Date": date.toLocaleDateString("fr-FR"),
+                        "Horaires": getRangesText(gridData[dayIndex]),
+                        "Heures": hours,
+                        "Heures Supp.": supp,
+                    });
+                });
+
+                // Ligne de total par employé
+                const totalHours = gridData.flat().filter(Boolean).length * 0.5;
+                const totalSupp = gridData.reduce((total, day) => {
+                    const dayHours = getDayHours(day);
+                    return total + (dayHours > 7 ? dayHours - 7 : 0);
+                }, 0);
+
+                detailedData.push({
+                    "Employé": `TOTAL ${employeeName}`,
+                    "Semaine": "",
+                    "Jour": "",
+                    "Date": "",
+                    "Horaires": "",
+                    "Heures": totalHours,
+                    "Heures Supp.": totalSupp,
+                });
+
+                // Ligne vide pour séparer les employés
+                detailedData.push({
+                    "Employé": "",
+                    "Semaine": "",
+                    "Jour": "",
+                    "Date": "",
+                    "Horaires": "",
+                    "Heures": "",
+                    "Heures Supp.": "",
+                });
+            });
+
+            // Total général
+            const grandTotalHours = timesheets.reduce((sum, data) => {
+                return sum + data.gridData.flat().filter(Boolean).length * 0.5;
+            }, 0);
+
+            const grandTotalSupp = timesheets.reduce((sum, data) => {
+                return sum + data.gridData.reduce((total, day) => {
+                    const dayHours = getDayHours(day);
+                    return total + (dayHours > 7 ? dayHours - 7 : 0);
+                }, 0);
+            }, 0);
+
+            detailedData.push({
+                "Employé": "TOTAL GÉNÉRAL",
+                "Semaine": "",
+                "Jour": "",
+                "Date": "",
+                "Horaires": "",
+                "Heures": grandTotalHours,
+                "Heures Supp.": grandTotalSupp,
+            });
+
+            const wsDetailed = XLSX.utils.json_to_sheet(detailedData);
+            wsDetailed["!cols"] = [
+                { wch: 25 },  // Employé
+                { wch: 25 },  // Semaine
+                { wch: 12 },  // Jour
+                { wch: 12 },  // Date
+                { wch: 40 },  // Horaires
+                { wch: 10 },  // Heures
+                { wch: 15 },  // Heures Supp.
+            ];
+            XLSX.utils.book_append_sheet(wb, wsDetailed, "Details");
+
+            // Feuille 2: Résumé par employé
+            const summaryData = timesheets.map((data) => {
+                const { employeeName, weekStartDate, gridData } = data;
+                const weekDates = getWeekDates(weekStartDate);
+                const weekStr = `${weekStartDate.toLocaleDateString("fr-FR")} - ${weekDates[6].toLocaleDateString("fr-FR")}`;
+
+                const totalHours = gridData.flat().filter(Boolean).length * 0.5;
+                const totalSupp = gridData.reduce((total, day) => {
+                    const dayHours = getDayHours(day);
+                    return total + (dayHours > 7 ? dayHours - 7 : 0);
+                }, 0);
+
+                return {
+                    "Employé": employeeName,
+                    "Semaine": weekStr,
+                    "Total Heures": totalHours,
+                    "Heures Supp.": totalSupp,
+                    "Heures Normales": totalHours - totalSupp,
+                };
+            });
+
+            // Total du résumé
+            summaryData.push({
+                "Employé": "TOTAL",
+                "Semaine": "",
+                "Total Heures": grandTotalHours,
+                "Heures Supp.": grandTotalSupp,
+                "Heures Normales": grandTotalHours - grandTotalSupp,
+            });
+
+            const wsSummary = XLSX.utils.json_to_sheet(summaryData);
+            wsSummary["!cols"] = [
+                { wch: 25 },  // Employé
+                { wch: 25 },  // Semaine
+                { wch: 15 },  // Total Heures
+                { wch: 15 },  // Heures Supp.
+                { wch: 18 },  // Heures Normales
+            ];
+            XLSX.utils.book_append_sheet(wb, wsSummary, "Resume");
+
+            // Feuille 3: Statistiques
+            const avgHours = grandTotalHours / timesheets.length;
+            const avgSupp = grandTotalSupp / timesheets.length;
+
+            const statsData = [
+                { "Statistique": "Nombre d'employés", "Valeur": timesheets.length },
+                { "Statistique": "Total heures", "Valeur": grandTotalHours.toFixed(2) },
+                { "Statistique": "Total heures supplémentaires", "Valeur": grandTotalSupp.toFixed(2) },
+                { "Statistique": "Moyenne heures par employé", "Valeur": avgHours.toFixed(2) },
+                { "Statistique": "Moyenne heures supp. par employé", "Valeur": avgSupp.toFixed(2) },
+            ];
+
+            const wsStats = XLSX.utils.json_to_sheet(statsData);
+            wsStats["!cols"] = [
+                { wch: 35 },  // Statistique
+                { wch: 15 },  // Valeur
+            ];
+            XLSX.utils.book_append_sheet(wb, wsStats, "Statistiques");
+
+            // Sauvegarder le fichier
+            const date = new Date().toISOString().slice(0, 10);
+            XLSX.writeFile(wb, `TEST_releves_heures_consolide_${timesheets.length}_employes_${date}.xlsx`);
+        }
+
+        function testExcelExport() {
+            const resultDiv = document.getElementById('result');
+
+            try {
+                // Créer des données de test
+                const testData = createTestData();
+
+                // Afficher les données de test
+                document.getElementById('testData').textContent = JSON.stringify(
+                    testData.map(t => ({
+                        name: t.employeeName,
+                        week: t.weekStartDate.toLocaleDateString('fr-FR'),
+                        totalSlots: t.gridData.flat().filter(Boolean).length,
+                        totalHours: t.gridData.flat().filter(Boolean).length * 0.5
+                    })),
+                    null,
+                    2
+                );
+
+                // Générer le fichier Excel
+                generateConsolidatedExcel(testData);
+
+                resultDiv.innerHTML = `
+                    <div class="info success">
+                        <h3>✅ Export Excel réussi !</h3>
+                        <p>Le fichier <strong>TEST_releves_heures_consolide_3_employes_${new Date().toISOString().slice(0, 10)}.xlsx</strong> a été téléchargé.</p>
+                        <p>Ouvrez-le pour vérifier qu'il contient :</p>
+                        <ul>
+                            <li>Feuille "Details" : 3 employés x 7 jours + totaux</li>
+                            <li>Feuille "Resume" : Résumé par employé</li>
+                            <li>Feuille "Statistiques" : Stats générales</li>
+                        </ul>
+                    </div>
+                `;
+            } catch (error) {
+                resultDiv.innerHTML = `
+                    <div class="info error">
+                        <h3>❌ Erreur lors de l'export</h3>
+                        <p><strong>Message :</strong> ${error.message}</p>
+                        <p><strong>Stack :</strong></p>
+                        <pre>${error.stack}</pre>
+                    </div>
+                `;
+            }
+        }
+
+        // Afficher les infos au chargement
+        window.onload = () => {
+            document.getElementById('testData').textContent = 'Cliquez sur le bouton pour générer les données de test...';
+        };
+    </script>
+</body>
+</html>
