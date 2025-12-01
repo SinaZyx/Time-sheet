@@ -11,6 +11,8 @@ import {
   TrendingUp,
   LogOut,
   Loader2,
+  Users,
+  LayoutGrid,
 } from "lucide-react";
 import { jsPDF } from "jspdf";
 import autoTable from "jspdf-autotable";
@@ -19,6 +21,7 @@ import { Session } from "@supabase/supabase-js";
 import { supabase } from "./lib/supabase";
 import Auth from "./components/Auth";
 import EmailNotVerified from "./components/EmailNotVerified";
+import RHDashboard from "./components/RHDashboard";
 
 const START_HOUR = 6;
 const END_HOUR = 23; // 23h00 inclus
@@ -41,6 +44,8 @@ export default function App() {
   const [authLoading, setAuthLoading] = useState(true);
   const [dataLoading, setDataLoading] = useState(false);
   const [verificationMessage, setVerificationMessage] = useState<string | null>(null);
+  const [userRole, setUserRole] = useState<'employee' | 'admin' | null>(null);
+  const [viewMode, setViewMode] = useState<'employee' | 'rh'>('employee');
 
   // Labels horaires 06:00, 06:30, ...
   const timeLabels = Array.from({ length: TOTAL_SLOTS }, (_, i) => {
@@ -65,18 +70,27 @@ export default function App() {
   });
 
   useEffect(() => {
-    supabase.auth.getSession().then(({ data: { session } }) => {
+    supabase.auth.getSession().then(async ({ data: { session } }) => {
       setSession(session);
       if (session?.user) {
         const name = session.user.user_metadata.full_name || session.user.email?.split('@')[0];
         if (name) setCollabName(name);
+
+        // Récupérer le rôle de l'utilisateur
+        const { data: profile } = await supabase
+          .from('profiles')
+          .select('role')
+          .eq('id', session.user.id)
+          .single();
+
+        setUserRole(profile?.role || 'employee');
       }
       setAuthLoading(false);
     });
 
     const {
       data: { subscription },
-    } = supabase.auth.onAuthStateChange((event, session) => {
+    } = supabase.auth.onAuthStateChange(async (event, session) => {
       setSession(session);
 
       // Gérer la vérification d'email
@@ -88,6 +102,15 @@ export default function App() {
       if (session?.user) {
         const name = session.user.user_metadata.full_name || session.user.email?.split('@')[0];
         if (name) setCollabName(name);
+
+        // Récupérer le rôle de l'utilisateur
+        const { data: profile } = await supabase
+          .from('profiles')
+          .select('role')
+          .eq('id', session.user.id)
+          .single();
+
+        setUserRole(profile?.role || 'employee');
       }
     });
 
@@ -390,6 +413,37 @@ export default function App() {
     return <EmailNotVerified email={session.user.email || ''} />;
   }
 
+  // Afficher la vue RH si l'utilisateur est admin et en mode RH
+  if (viewMode === 'rh' && userRole === 'admin') {
+    return (
+      <div>
+        <header className="bg-white border-b border-slate-200 sticky top-0 z-20 shadow-sm">
+          <div className="max-w-7xl mx-auto px-4 py-4">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-3">
+                <button
+                  onClick={() => setViewMode('employee')}
+                  className="flex items-center gap-2 px-4 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-lg font-medium text-sm transition-all"
+                >
+                  <LayoutGrid size={16} />
+                  Ma feuille de temps
+                </button>
+              </div>
+              <button
+                onClick={() => supabase.auth.signOut()}
+                className="p-2 text-slate-500 hover:bg-slate-100 rounded-lg transition-colors"
+                title="Se déconnecter"
+              >
+                <LogOut size={20} />
+              </button>
+            </div>
+          </div>
+        </header>
+        <RHDashboard />
+      </div>
+    );
+  }
+
   return (
     <div
       className="min-h-screen bg-slate-50 text-slate-900 font-sans selection:bg-sky-200"
@@ -471,6 +525,18 @@ export default function App() {
               >
                 <Download size={16} /> PDF
               </button>
+              {userRole === 'admin' && (
+                <>
+                  <div className="h-6 w-px bg-slate-300 mx-1" />
+                  <button
+                    onClick={() => setViewMode('rh')}
+                    className="flex items-center gap-2 px-4 py-2 bg-purple-600 hover:bg-purple-700 text-white rounded-lg font-medium text-sm transition-all"
+                    title="Tableau de bord RH"
+                  >
+                    <Users size={16} /> RH
+                  </button>
+                </>
+              )}
               <div className="h-6 w-px bg-slate-300 mx-1" />
               <button
                 onClick={() => supabase.auth.signOut()}
