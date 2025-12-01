@@ -63,6 +63,10 @@ export default function App() {
   };
 
   const monday = useMemo(() => getMonday(currentDate), [currentDate]);
+
+  // Convertir monday en string pour éviter les problèmes de référence
+  const mondayStr = useMemo(() => monday.toISOString().split('T')[0], [monday]);
+
   const weekDates = useMemo(() =>
     Array.from({ length: 7 }, (_, i) => {
       const d = new Date(monday);
@@ -123,12 +127,11 @@ export default function App() {
     if (!session) return;
     setDataLoading(true);
     try {
-      const dateStr = monday.toISOString().split('T')[0];
       const { data, error } = await supabase
         .from('timesheets')
         .select('grid_data')
         .eq('user_id', session.user.id)
-        .eq('week_start_date', dateStr)
+        .eq('week_start_date', mondayStr)
         .single();
 
       if (error && error.code !== 'PGRST116') throw error;
@@ -143,17 +146,16 @@ export default function App() {
     } finally {
       setDataLoading(false);
     }
-  }, [session, monday]);
+  }, [session, mondayStr]);
 
-  const saveWeekData = async (currentGrid: boolean[][]) => {
+  const saveWeekData = useCallback(async (currentGrid: boolean[][]) => {
     if (!session) return;
     try {
-      const dateStr = monday.toISOString().split('T')[0];
       const { error } = await supabase
         .from('timesheets')
         .upsert({
           user_id: session.user.id,
-          week_start_date: dateStr,
+          week_start_date: mondayStr,
           grid_data: currentGrid,
           updated_at: new Date().toISOString(),
         }, { onConflict: 'user_id,week_start_date' });
@@ -162,7 +164,7 @@ export default function App() {
     } catch (error) {
       console.error('Error saving data:', error);
     }
-  };
+  }, [session, mondayStr]);
 
   useEffect(() => {
     if (session) {
