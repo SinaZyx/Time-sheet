@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { supabase } from '../lib/supabase';
-import { Lock, Mail, Loader2, User } from 'lucide-react';
+import { Lock, Mail, Loader2, User, Eye, EyeOff } from 'lucide-react';
 import EmailVerificationPending from './EmailVerificationPending';
 
 export default function Auth() {
@@ -11,6 +11,7 @@ export default function Auth() {
     const [isSignUp, setIsSignUp] = useState(false);
     const [message, setMessage] = useState<{ type: 'error' | 'success', text: string } | null>(null);
     const [showVerificationPending, setShowVerificationPending] = useState(false);
+    const [showPassword, setShowPassword] = useState(false);
 
     const getErrorMessage = (error: any): string => {
         const errorMsg = error.message.toLowerCase();
@@ -134,14 +135,22 @@ export default function Auth() {
                         <div className="relative">
                             <Lock className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={20} />
                             <input
-                                type="password"
+                                type={showPassword ? "text" : "password"}
                                 required
                                 value={password}
                                 onChange={(e) => setPassword(e.target.value)}
-                                className="w-full pl-10 pr-4 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-sky-500 focus:border-sky-500 outline-none transition-all"
+                                className="w-full pl-10 pr-12 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-sky-500 focus:border-sky-500 outline-none transition-all"
                                 placeholder="••••••••"
                                 minLength={6}
                             />
+                            <button
+                                type="button"
+                                onClick={() => setShowPassword(!showPassword)}
+                                className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 transition-colors"
+                                tabIndex={-1}
+                            >
+                                {showPassword ? <EyeOff size={20} /> : <Eye size={20} />}
+                            </button>
                         </div>
                     </div>
 
