@@ -68,7 +68,6 @@ export function generateConsolidatedExcel(timesheets: TimesheetData[]): void {
 
         weekDates.forEach((date, dayIndex) => {
             const hours = getDayHours(gridData[dayIndex]);
-            const supp = hours > 7 ? hours - 7 : 0;
 
             detailedData.push({
                 "Employé": employeeName,
@@ -77,16 +76,13 @@ export function generateConsolidatedExcel(timesheets: TimesheetData[]): void {
                 "Date": date.toLocaleDateString("fr-FR"),
                 "Horaires": getRangesText(gridData[dayIndex]),
                 "Heures": hours,
-                "Heures Supp.": supp,
             });
         });
 
         // Ligne de total par employé
         const totalHours = gridData.flat().filter(Boolean).length * 0.5;
-        const totalSupp = gridData.reduce((total, day) => {
-            const dayHours = getDayHours(day);
-            return total + (dayHours > 7 ? dayHours - 7 : 0);
-        }, 0);
+        // En France : Heures supp = au-delà de 35h par semaine
+        const totalSupp = Math.max(0, totalHours - 35);
 
         detailedData.push({
             "Employé": `TOTAL ${employeeName}`,
@@ -115,11 +111,10 @@ export function generateConsolidatedExcel(timesheets: TimesheetData[]): void {
         return sum + data.gridData.flat().filter(Boolean).length * 0.5;
     }, 0);
 
+    // En France : Heures supp totales = somme des heures supp de chaque employé (>35h/semaine)
     const grandTotalSupp = timesheets.reduce((sum, data) => {
-        return sum + data.gridData.reduce((total, day) => {
-            const dayHours = getDayHours(day);
-            return total + (dayHours > 7 ? dayHours - 7 : 0);
-        }, 0);
+        const employeeHours = data.gridData.flat().filter(Boolean).length * 0.5;
+        return sum + Math.max(0, employeeHours - 35);
     }, 0);
 
     detailedData.push({
@@ -151,27 +146,26 @@ export function generateConsolidatedExcel(timesheets: TimesheetData[]): void {
         const weekStr = `${weekStartDate.toLocaleDateString("fr-FR")} - ${weekDates[6].toLocaleDateString("fr-FR")}`;
 
         const totalHours = gridData.flat().filter(Boolean).length * 0.5;
-        const totalSupp = gridData.reduce((total, day) => {
-            const dayHours = getDayHours(day);
-            return total + (dayHours > 7 ? dayHours - 7 : 0);
-        }, 0);
+        // En France : Heures supp = au-delà de 35h par semaine
+        const totalSupp = Math.max(0, totalHours - 35);
 
         return {
             "Employé": employeeName,
             "Semaine": weekStr,
             "Total Heures": totalHours,
-            "Heures Supp.": totalSupp,
-            "Heures Normales": totalHours - totalSupp,
+            "Heures Supp. (>35h)": totalSupp,
+            "Heures Normales": Math.min(totalHours, 35),
         };
     });
 
     // Total du résumé
+    const grandTotalNormales = grandTotalHours - grandTotalSupp;
     summaryData.push({
         "Employé": "TOTAL",
         "Semaine": "",
         "Total Heures": grandTotalHours,
-        "Heures Supp.": grandTotalSupp,
-        "Heures Normales": grandTotalHours - grandTotalSupp,
+        "Heures Supp. (>35h)": grandTotalSupp,
+        "Heures Normales": grandTotalNormales,
     });
 
     const wsSummary = XLSX.utils.json_to_sheet(summaryData);
@@ -179,7 +173,7 @@ export function generateConsolidatedExcel(timesheets: TimesheetData[]): void {
         { wch: 25 },  // Employé
         { wch: 25 },  // Semaine
         { wch: 15 },  // Total Heures
-        { wch: 15 },  // Heures Supp.
+        { wch: 20 },  // Heures Supp. (>35h)
         { wch: 18 },  // Heures Normales
     ];
     XLSX.utils.book_append_sheet(wb, wsSummary, "Resume");

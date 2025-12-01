@@ -239,7 +239,7 @@ export default function App() {
   };
 
   const clearGrid = () => {
-    if (window.confirm("Voulez-vous vraiment effacer tout le planning ?")) {
+    if (window.confirm("Voulez-vous vraiment effacer le planning de cette semaine ?")) {
       const newGrid = Array(7)
         .fill(null)
         .map(() => Array(TOTAL_SLOTS).fill(false));
@@ -251,12 +251,9 @@ export default function App() {
   const calculateHours = () => grid.flat().filter(Boolean).length * 0.5;
 
   const calculateOvertime = () => {
-    let totalOT = 0;
-    grid.forEach((day) => {
-      const hours = day.filter(Boolean).length * 0.5;
-      if (hours > 7) totalOT += hours - 7;
-    });
-    return totalOT;
+    // En France : Heures supp = au-delà de 35h par semaine
+    const totalHours = calculateHours();
+    return Math.max(0, totalHours - 35);
   };
 
   const getDayHours = (dayIndex: number) => grid[dayIndex].filter(Boolean).length * 0.5;
@@ -389,33 +386,37 @@ export default function App() {
     const wb = XLSX.utils.book_new();
     const summaryData = weekDates.map((date, i) => {
       const hours = getDayHours(i);
-      const supp = hours > 7 ? hours - 7 : 0;
       return {
         Jour: DAYS[i],
         Date: date.toLocaleDateString("fr-FR"),
         Horaires: getRangesText(i),
-        Total: hours,
-        "Heures Supp.": supp,
+        "Heures": hours,
       };
     });
 
     const totalH = calculateHours();
     const totalOT = calculateOvertime();
     summaryData.push({
-      Jour: "TOTAL",
+      Jour: "TOTAL SEMAINE",
       Date: "",
       Horaires: "",
-      Total: totalH,
-      "Heures Supp.": totalOT,
+      "Heures": totalH,
+    });
+
+    // Ajouter ligne séparée pour heures supp (calculées à la semaine en France)
+    summaryData.push({
+      Jour: "",
+      Date: "",
+      Horaires: "Heures supplémentaires (>35h)",
+      "Heures": totalOT,
     });
 
     const wsSummary = XLSX.utils.json_to_sheet(summaryData);
     wsSummary["!cols"] = [
-      { wch: 15 },
-      { wch: 15 },
-      { wch: 40 },
-      { wch: 10 },
-      { wch: 15 },
+      { wch: 15 },  // Jour
+      { wch: 15 },  // Date
+      { wch: 40 },  // Horaires
+      { wch: 12 },  // Heures
     ];
     XLSX.utils.book_append_sheet(wb, wsSummary, "Resume");
     XLSX.writeFile(wb, "releve_heures.xlsx");
