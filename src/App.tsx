@@ -18,6 +18,7 @@ import * as XLSX from "xlsx";
 import { Session } from "@supabase/supabase-js";
 import { supabase } from "./lib/supabase";
 import Auth from "./components/Auth";
+import EmailNotVerified from "./components/EmailNotVerified";
 
 const START_HOUR = 6;
 const END_HOUR = 23; // 23h00 inclus
@@ -39,6 +40,7 @@ export default function App() {
   const [session, setSession] = useState<Session | null>(null);
   const [authLoading, setAuthLoading] = useState(true);
   const [dataLoading, setDataLoading] = useState(false);
+  const [verificationMessage, setVerificationMessage] = useState<string | null>(null);
 
   // Labels horaires 06:00, 06:30, ...
   const timeLabels = Array.from({ length: TOTAL_SLOTS }, (_, i) => {
@@ -74,8 +76,15 @@ export default function App() {
 
     const {
       data: { subscription },
-    } = supabase.auth.onAuthStateChange((_event, session) => {
+    } = supabase.auth.onAuthStateChange((event, session) => {
       setSession(session);
+
+      // Gérer la vérification d'email
+      if (event === 'SIGNED_IN' && session?.user?.email_confirmed_at) {
+        setVerificationMessage('Email vérifié avec succès ! Bienvenue.');
+        setTimeout(() => setVerificationMessage(null), 5000);
+      }
+
       if (session?.user) {
         const name = session.user.user_metadata.full_name || session.user.email?.split('@')[0];
         if (name) setCollabName(name);
@@ -376,6 +385,11 @@ export default function App() {
     return <Auth />;
   }
 
+  // Vérifier si l'email est confirmé
+  if (!session.user.email_confirmed_at) {
+    return <EmailNotVerified email={session.user.email || ''} />;
+  }
+
   return (
     <div
       className="min-h-screen bg-slate-50 text-slate-900 font-sans selection:bg-sky-200"
@@ -469,6 +483,20 @@ export default function App() {
           </div>
         </div>
       </header>
+
+      {verificationMessage && (
+        <div className="max-w-7xl mx-auto px-4 pt-4">
+          <div className="bg-green-50 border border-green-200 text-green-700 px-4 py-3 rounded-lg flex items-center justify-between">
+            <span>{verificationMessage}</span>
+            <button
+              onClick={() => setVerificationMessage(null)}
+              className="text-green-700 hover:text-green-900 font-bold"
+            >
+              ×
+            </button>
+          </div>
+        </div>
+      )}
 
       <main className="max-w-7xl mx-auto px-4 py-6">
         <div className="grid grid-cols-1 md:grid-cols-4 gap-6 mb-8">
