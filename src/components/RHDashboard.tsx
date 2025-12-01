@@ -38,10 +38,10 @@ export default function RHDashboard() {
     const fetchEmployees = async () => {
         setLoading(true);
         try {
-            // Récupérer tous les utilisateurs avec leur profile
+            // Récupérer tous les utilisateurs avec leur profile (email et full_name maintenant dans profiles)
             const { data: profiles, error: profilesError } = await supabase
                 .from('profiles')
-                .select('id');
+                .select('id, email, full_name, role');
 
             if (profilesError) throw profilesError;
 
@@ -50,13 +50,6 @@ export default function RHDashboard() {
                 setLoading(false);
                 return;
             }
-
-            const userIds = profiles.map(p => p.id);
-
-            // Récupérer les informations utilisateur
-            const { data: { users }, error: usersError } = await supabase.auth.admin.listUsers();
-
-            if (usersError) throw usersError;
 
             // Récupérer tous les timesheets du mois en cours
             const now = new Date();
@@ -72,9 +65,8 @@ export default function RHDashboard() {
             if (timesheetsError) throw timesheetsError;
 
             // Calculer les statistiques pour chaque employé
-            const employeesData: Employee[] = userIds.map(userId => {
-                const user = users?.find(u => u.id === userId);
-                const userTimesheets = timesheets?.filter(t => t.user_id === userId) || [];
+            const employeesData: Employee[] = profiles.map(profile => {
+                const userTimesheets = timesheets?.filter(t => t.user_id === profile.id) || [];
 
                 // Calculer le total d'heures du mois
                 const totalHours = userTimesheets.reduce((sum, ts) => {
@@ -87,9 +79,9 @@ export default function RHDashboard() {
                     : null;
 
                 return {
-                    id: userId,
-                    name: user?.user_metadata?.full_name || user?.email?.split('@')[0] || 'Inconnu',
-                    email: user?.email || '',
+                    id: profile.id,
+                    name: profile.full_name || profile.email?.split('@')[0] || 'Inconnu',
+                    email: profile.email || '',
                     totalHours,
                     lastUpdate,
                 };
@@ -180,15 +172,20 @@ export default function RHDashboard() {
                 return;
             }
 
-            const { data: { users } } = await supabase.auth.admin.listUsers();
+            // Récupérer les profiles pour obtenir les noms
+            const { data: profiles } = await supabase
+                .from('profiles')
+                .select('id, email, full_name')
+                .in('id', timesheets.map(ts => ts.user_id));
 
-            const pdfData = timesheets.map(ts => ({
-                employeeName: users?.find(u => u.id === ts.user_id)?.user_metadata?.full_name ||
-                             users?.find(u => u.id === ts.user_id)?.email?.split('@')[0] ||
-                             'Inconnu',
-                weekStartDate: new Date(ts.week_start_date),
-                gridData: ts.grid_data,
-            }));
+            const pdfData = timesheets.map(ts => {
+                const profile = profiles?.find(p => p.id === ts.user_id);
+                return {
+                    employeeName: profile?.full_name || profile?.email?.split('@')[0] || 'Inconnu',
+                    weekStartDate: new Date(ts.week_start_date),
+                    gridData: ts.grid_data,
+                };
+            });
 
             generateConsolidatedPDF(pdfData);
         } catch (error) {
@@ -208,12 +205,17 @@ export default function RHDashboard() {
                 return;
             }
 
-            const { data: { users } } = await supabase.auth.admin.listUsers();
+            // Récupérer les profiles pour obtenir les noms
+            const { data: profiles } = await supabase
+                .from('profiles')
+                .select('id, email, full_name')
+                .in('id', timesheets.map(ts => ts.user_id));
+
             const zip = new JSZip();
 
             for (const ts of timesheets) {
-                const user = users?.find(u => u.id === ts.user_id);
-                const employeeName = user?.user_metadata?.full_name || user?.email?.split('@')[0] || 'Inconnu';
+                const profile = profiles?.find(p => p.id === ts.user_id);
+                const employeeName = profile?.full_name || profile?.email?.split('@')[0] || 'Inconnu';
 
                 const pdfData = {
                     employeeName,
@@ -250,15 +252,20 @@ export default function RHDashboard() {
                 return;
             }
 
-            const { data: { users } } = await supabase.auth.admin.listUsers();
+            // Récupérer les profiles pour obtenir les noms
+            const { data: profiles } = await supabase
+                .from('profiles')
+                .select('id, email, full_name')
+                .in('id', timesheets.map(ts => ts.user_id));
 
-            const excelData = timesheets.map(ts => ({
-                employeeName: users?.find(u => u.id === ts.user_id)?.user_metadata?.full_name ||
-                             users?.find(u => u.id === ts.user_id)?.email?.split('@')[0] ||
-                             'Inconnu',
-                weekStartDate: new Date(ts.week_start_date),
-                gridData: ts.grid_data,
-            }));
+            const excelData = timesheets.map(ts => {
+                const profile = profiles?.find(p => p.id === ts.user_id);
+                return {
+                    employeeName: profile?.full_name || profile?.email?.split('@')[0] || 'Inconnu',
+                    weekStartDate: new Date(ts.week_start_date),
+                    gridData: ts.grid_data,
+                };
+            });
 
             generateConsolidatedExcel(excelData);
         } catch (error) {

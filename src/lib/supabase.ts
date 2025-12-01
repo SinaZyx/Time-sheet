@@ -8,18 +8,24 @@ export interface Database {
                 Row: {
                     id: string;
                     role: 'employee' | 'admin';
+                    email: string | null;
+                    full_name: string | null;
                     created_at: string;
                     updated_at: string;
                 };
                 Insert: {
                     id: string;
                     role?: 'employee' | 'admin';
+                    email?: string | null;
+                    full_name?: string | null;
                     created_at?: string;
                     updated_at?: string;
                 };
                 Update: {
                     id?: string;
                     role?: 'employee' | 'admin';
+                    email?: string | null;
+                    full_name?: string | null;
                     created_at?: string;
                     updated_at?: string;
                 };
