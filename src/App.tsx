@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useCallback, useMemo } from "react";
 import {
   Calendar,
   ChevronLeft,
@@ -62,12 +62,14 @@ export default function App() {
     return new Date(date.setDate(diff));
   };
 
-  const monday = getMonday(currentDate);
-  const weekDates = Array.from({ length: 7 }, (_, i) => {
-    const d = new Date(monday);
-    d.setDate(monday.getDate() + i);
-    return d;
-  });
+  const monday = useMemo(() => getMonday(currentDate), [currentDate]);
+  const weekDates = useMemo(() =>
+    Array.from({ length: 7 }, (_, i) => {
+      const d = new Date(monday);
+      d.setDate(monday.getDate() + i);
+      return d;
+    }), [monday]
+  );
 
   useEffect(() => {
     supabase.auth.getSession().then(async ({ data: { session } }) => {
@@ -117,7 +119,7 @@ export default function App() {
     return () => subscription.unsubscribe();
   }, []);
 
-  const fetchWeekData = async () => {
+  const fetchWeekData = useCallback(async () => {
     if (!session) return;
     setDataLoading(true);
     try {
@@ -141,7 +143,7 @@ export default function App() {
     } finally {
       setDataLoading(false);
     }
-  };
+  }, [session, monday]);
 
   const saveWeekData = async (currentGrid: boolean[][]) => {
     if (!session) return;
@@ -166,7 +168,7 @@ export default function App() {
     if (session) {
       fetchWeekData();
     }
-  }, [session, currentDate]);
+  }, [session, fetchWeekData]);
 
   const updateGrid = (day: number, slot: number, val: boolean) => {
     setGrid((prev) => {
