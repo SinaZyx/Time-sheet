@@ -55,14 +55,15 @@ export default function App() {
     return `${h.toString().padStart(2, "0")}:${m.toString().padStart(2, "0")}`;
   });
 
-  const getMonday = (d: Date) => {
+  const getMonday = useCallback((d: Date) => {
     const date = new Date(d);
     const day = date.getDay();
     const diff = date.getDate() - day + (day === 0 ? -6 : 1);
-    return new Date(date.setDate(diff));
-  };
+    date.setDate(diff);
+    return date;
+  }, []);
 
-  const monday = useMemo(() => getMonday(currentDate), [currentDate]);
+  const monday = useMemo(() => getMonday(currentDate), [currentDate, getMonday]);
 
   // Convertir monday en string pour éviter les problèmes de référence
   const mondayStr = useMemo(() => monday.toISOString().split('T')[0], [monday]);
@@ -77,46 +78,66 @@ export default function App() {
 
   useEffect(() => {
     supabase.auth.getSession().then(async ({ data: { session } }) => {
-      setSession(session);
-      if (session?.user) {
-        const name = session.user.user_metadata.full_name || session.user.email?.split('@')[0];
-        if (name) setCollabName(name);
+      try {
+        setSession(session);
+        if (session?.user) {
+          const name = session.user.user_metadata.full_name || session.user.email?.split('@')[0];
+          if (name) setCollabName(name);
 
-        // Récupérer le rôle de l'utilisateur
-        const { data: profile } = await supabase
-          .from('profiles')
-          .select('role')
-          .eq('id', session.user.id)
-          .single();
+          // Récupérer le rôle de l'utilisateur
+          const { data: profile, error } = await supabase
+            .from('profiles')
+            .select('role')
+            .eq('id', session.user.id)
+            .single();
 
-        setUserRole(profile?.role || 'employee');
+          if (error) {
+            console.error('Error fetching profile:', error);
+          }
+
+          setUserRole(profile?.role || 'employee');
+        }
+      } catch (error) {
+        console.error('Error in auth init:', error);
+      } finally {
+        setAuthLoading(false);
       }
+    }).catch((error) => {
+      console.error('Error getting session:', error);
       setAuthLoading(false);
     });
 
     const {
       data: { subscription },
     } = supabase.auth.onAuthStateChange(async (event, session) => {
-      setSession(session);
+      try {
+        setSession(session);
 
-      // Gérer la vérification d'email
-      if (event === 'SIGNED_IN' && session?.user?.email_confirmed_at) {
-        setVerificationMessage('Email vérifié avec succès ! Bienvenue.');
-        setTimeout(() => setVerificationMessage(null), 5000);
-      }
+        // Gérer la vérification d'email
+        if (event === 'SIGNED_IN' && session?.user?.email_confirmed_at) {
+          setVerificationMessage('Email vérifié avec succès ! Bienvenue.');
+          setTimeout(() => setVerificationMessage(null), 5000);
+        }
 
-      if (session?.user) {
-        const name = session.user.user_metadata.full_name || session.user.email?.split('@')[0];
-        if (name) setCollabName(name);
+        if (session?.user) {
+          const name = session.user.user_metadata.full_name || session.user.email?.split('@')[0];
+          if (name) setCollabName(name);
 
-        // Récupérer le rôle de l'utilisateur
-        const { data: profile } = await supabase
-          .from('profiles')
-          .select('role')
-          .eq('id', session.user.id)
-          .single();
+          // Récupérer le rôle de l'utilisateur
+          const { data: profile, error } = await supabase
+            .from('profiles')
+            .select('role')
+            .eq('id', session.user.id)
+            .single();
 
-        setUserRole(profile?.role || 'employee');
+          if (error) {
+            console.error('Error fetching profile on auth change:', error);
+          }
+
+          setUserRole(profile?.role || 'employee');
+        }
+      } catch (error) {
+        console.error('Error in auth state change:', error);
       }
     });
 
