@@ -77,22 +77,30 @@ export default function App() {
   );
 
   useEffect(() => {
-    supabase.auth.getSession().then(async ({ data: { session } }) => {
+    supabase.auth.getSession().then(async ({ data, error }) => {
       try {
+        if (error) {
+          console.error('Error getting session:', error);
+          await supabase.auth.signOut(); // Session corrompue → forcer la déconnexion
+          setSession(null);
+          return;
+        }
+
+        const session = data.session;
         setSession(session);
         if (session?.user) {
           const name = session.user.user_metadata.full_name || session.user.email?.split('@')[0];
           if (name) setCollabName(name);
 
           // Récupérer le rôle de l'utilisateur
-          const { data: profile, error } = await supabase
+          const { data: profile, error: profileError } = await supabase
             .from('profiles')
             .select('role')
             .eq('id', session.user.id)
             .single();
 
-          if (error) {
-            console.error('Error fetching profile:', error);
+          if (profileError) {
+            console.error('Error fetching profile:', profileError);
           }
 
           setUserRole(profile?.role || 'employee');
@@ -102,8 +110,9 @@ export default function App() {
       } finally {
         setAuthLoading(false);
       }
-    }).catch((error) => {
+    }).catch(async (error) => {
       console.error('Error getting session:', error);
+      await supabase.auth.signOut();
       setAuthLoading(false);
     });
 
