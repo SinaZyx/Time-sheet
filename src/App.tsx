@@ -43,6 +43,7 @@ export default function App() {
   const [session, setSession] = useState<Session | null>(null);
   const [authLoading, setAuthLoading] = useState(true);
   const [dataLoading, setDataLoading] = useState(false);
+  const [showResetButton, setShowResetButton] = useState(false);
   const [verificationMessage, setVerificationMessage] = useState<string | null>(null);
   const [userRole, setUserRole] = useState<'employee' | 'admin' | null>(null);
   const [viewMode, setViewMode] = useState<'employee' | 'rh'>('employee');
@@ -68,6 +69,18 @@ export default function App() {
   // Convertir monday en string pour éviter les problèmes de référence
   const mondayStr = useMemo(() => monday.toISOString().split('T')[0], [monday]);
 
+  const handleEmergencySignOut = useCallback(async () => {
+    try {
+      await supabase.auth.signOut();
+      localStorage.clear();
+    } catch (error) {
+      console.error('Erreur lors du reset session:', error);
+      localStorage.clear();
+    } finally {
+      window.location.reload();
+    }
+  }, []);
+
   const weekDates = useMemo(() =>
     Array.from({ length: 7 }, (_, i) => {
       const d = new Date(monday);
@@ -77,6 +90,10 @@ export default function App() {
   );
 
   useEffect(() => {
+    const loadingTimer = setTimeout(() => {
+      if (authLoading) setShowResetButton(true);
+    }, 5000);
+
     supabase.auth.getSession().then(async ({ data, error }) => {
       try {
         if (error) {
@@ -107,13 +124,17 @@ export default function App() {
         }
       } catch (error) {
         console.error('Error in auth init:', error);
+        setShowResetButton(true);
       } finally {
         setAuthLoading(false);
+        clearTimeout(loadingTimer);
       }
     }).catch(async (error) => {
       console.error('Error getting session:', error);
       await supabase.auth.signOut();
+      setShowResetButton(true);
       setAuthLoading(false);
+      clearTimeout(loadingTimer);
     });
 
     const {
@@ -150,7 +171,10 @@ export default function App() {
       }
     });
 
-    return () => subscription.unsubscribe();
+    return () => {
+      clearTimeout(loadingTimer);
+      subscription.unsubscribe();
+    };
   }, []);
 
   const fetchWeekData = useCallback(async () => {
@@ -433,8 +457,20 @@ export default function App() {
 
   if (authLoading) {
     return (
-      <div className="min-h-screen flex items-center justify-center bg-slate-50">
+      <div className="min-h-screen flex flex-col items-center justify-center bg-slate-50 gap-3">
         <Loader2 className="animate-spin text-sky-600" size={40} />
+        <p className="text-slate-500 text-sm">Chargement de l'application...</p>
+        {showResetButton && (
+          <div className="flex flex-col items-center gap-2 mt-2">
+            <p className="text-amber-600 text-xs font-medium">Le chargement semble bloqué ?</p>
+            <button
+              onClick={handleEmergencySignOut}
+              className="px-4 py-2 bg-white border border-slate-300 text-slate-700 rounded-lg text-sm hover:bg-slate-50 shadow-sm transition-all"
+            >
+              Réinitialiser la session
+            </button>
+          </div>
+        )}
       </div>
     );
   }
