@@ -69,15 +69,23 @@ export default function App() {
   // Convertir monday en string pour éviter les problèmes de référence
   const mondayStr = useMemo(() => monday.toISOString().split('T')[0], [monday]);
 
+  const clearAuthStorage = () => {
+    const keys = ['time-sheet-auth-dev', 'time-sheet-auth-prod', 'supabase.auth.token'];
+    keys.forEach((k) => {
+      try { localStorage.removeItem(k); } catch { /* ignore */ }
+    });
+  };
+
   const handleEmergencySignOut = useCallback(async () => {
     try {
       await supabase.auth.signOut();
-      localStorage.clear();
     } catch (error) {
       console.error('Erreur lors du reset session:', error);
-      localStorage.clear();
     } finally {
-      window.location.reload();
+      clearAuthStorage();
+      setSession(null);       // retourne sur l'écran Auth sans recharger la page
+      setAuthLoading(false);
+      setShowResetButton(false);
     }
   }, []);
 
