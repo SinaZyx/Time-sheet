@@ -48,13 +48,17 @@ export default function App() {
   const [userRole, setUserRole] = useState<'employee' | 'admin' | null>(null);
   const [viewMode, setViewMode] = useState<'employee' | 'rh'>('employee');
 
-  // Labels horaires 06:00, 06:30, ...
-  const timeLabels = Array.from({ length: TOTAL_SLOTS }, (_, i) => {
-    const totalMinutes = START_HOUR * 60 + i * 30;
+  const formatMinutes = (totalMinutes: number) => {
     const h = Math.floor(totalMinutes / 60);
     const m = totalMinutes % 60;
     return `${h.toString().padStart(2, "0")}:${m.toString().padStart(2, "0")}`;
-  });
+  };
+
+  const getSlotStartTime = (slotIndex: number) => formatMinutes(START_HOUR * 60 + slotIndex * 30);
+  const getSlotEndTime = (slotIndex: number) => formatMinutes(START_HOUR * 60 + (slotIndex + 1) * 30);
+
+  // Labels horaires 06:00, 06:30, ...
+  const timeLabels = Array.from({ length: TOTAL_SLOTS }, (_, i) => getSlotStartTime(i));
 
   const getMonday = useCallback((d: Date) => {
     const date = new Date(d);
@@ -302,12 +306,7 @@ export default function App() {
   const formatRange = (startSlot: number, endSlot: number) => {
     const startMin = START_HOUR * 60 + startSlot * 30;
     const endMin = START_HOUR * 60 + endSlot * 30;
-    const formatTime = (min: number) => {
-      const h = Math.floor(min / 60);
-      const m = min % 60;
-      return `${h.toString().padStart(2, "0")}:${m.toString().padStart(2, "0")}`;
-    };
-    return `${formatTime(startMin)} - ${formatTime(endMin)}`;
+    return `${formatMinutes(startMin)} - ${formatMinutes(endMin)}`;
   };
 
   const getRangesText = (dayIndex: number) => {
@@ -738,6 +737,8 @@ export default function App() {
                     const isActive = grid[dayIndex][slotIndex];
                     const prevActive = slotIndex > 0 && grid[dayIndex][slotIndex - 1];
                     const nextActive = slotIndex < TOTAL_SLOTS - 1 && grid[dayIndex][slotIndex + 1];
+                    const isRangeStart = isActive && !prevActive;
+                    const isRangeEnd = isActive && !nextActive;
 
                     let roundedClass = "rounded-sm";
                     if (isActive) {
@@ -762,6 +763,16 @@ export default function App() {
                             ${roundedClass}
                           `}
                         />
+                        {isRangeStart && (
+                          <div className="absolute top-1 left-1 text-[10px] font-semibold text-white drop-shadow-sm pointer-events-none select-none">
+                            {getSlotStartTime(slotIndex)}
+                          </div>
+                        )}
+                        {isRangeEnd && (
+                          <div className="absolute bottom-1 right-1 text-[10px] font-semibold text-white drop-shadow-sm pointer-events-none select-none">
+                            {getSlotEndTime(slotIndex)}
+                          </div>
+                        )}
                       </div>
                     );
                   })}
