@@ -267,21 +267,36 @@ export default function App() {
         .eq('week_start_date', mondayStr)
         .single();
 
-      console.log('[fetchWeekData] Response:', { data: !!data, error: error?.message || null, errorCode: error?.code || null });
+      console.log('[fetchWeekData] Response:', {
+        hasData: !!data,
+        error: error?.message || null,
+        errorCode: error?.code || null,
+        gridDays: data?.grid_data?.length || 0
+      });
 
-      if (error && error.code !== 'PGRST116') throw error;
+      if (error && error.code !== 'PGRST116') {
+        console.error('[fetchWeekData] Unexpected error:', error);
+        throw error;
+      }
 
       if (data) {
-        console.log('[fetchWeekData] Found data, grid has', data.grid_data?.length, 'days');
+        console.log('[fetchWeekData] ✅ Found data, grid has', data.grid_data?.length, 'days');
         setGrid(data.grid_data);
       } else {
-        console.log('[fetchWeekData] No data found for this week, creating empty grid');
+        console.log('[fetchWeekData] ⚠️ No data found for this week (PGRST116), creating empty grid');
         setGrid(Array(7).fill(null).map(() => Array(TOTAL_SLOTS).fill(false)));
       }
     } catch (error) {
-      console.error('[fetchWeekData] Error fetching data:', error);
+      console.error('[fetchWeekData] ❌ Error fetching data:', error);
+      console.error('[fetchWeekData] Error details:', {
+        message: (error as any)?.message,
+        code: (error as any)?.code,
+        details: (error as any)?.details,
+        hint: (error as any)?.hint
+      });
       setLoadError((error as any)?.message || 'Erreur lors du chargement des heures');
     } finally {
+      console.log('[fetchWeekData] Fetch complete, setting dataLoading to false');
       setDataLoading(false);
     }
   }, [session, mondayStr]);
@@ -308,16 +323,20 @@ export default function App() {
   useEffect(() => {
     console.log('[useEffect fetchWeekData] Triggered with:', {
       hasSession: !!session,
+      authLoading,
       mondayStr,
       userId: session?.user?.id,
       email: session?.user?.email
     });
-    if (session) {
+
+    // Attendre que l'auth soit complètement chargée avant de fetch
+    if (!authLoading && session) {
+      console.log('[useEffect fetchWeekData] Calling fetchWeekData...');
       fetchWeekData();
     } else {
-      console.log('[useEffect fetchWeekData] Skipping fetch - no session');
+      console.log('[useEffect fetchWeekData] Skipping fetch - authLoading:', authLoading, 'hasSession:', !!session);
     }
-  }, [session, fetchWeekData]);
+  }, [session, authLoading, mondayStr]);
 
   const updateGrid = (day: number, slot: number, val: boolean) => {
     setGrid((prev) => {
