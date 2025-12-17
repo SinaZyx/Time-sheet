@@ -65,9 +65,16 @@ if (!supabaseUrl || !supabaseAnonKey) {
     throw new Error('Supabase non configuré : définis VITE_SUPABASE_URL et VITE_SUPABASE_ANON_KEY');
 }
 
-// Clé de stockage distincte pour éviter les collisions dev/prod dans le localStorage
+// Clé de stockage distincte (et versionnée) pour éviter les collisions dev/prod et forcer un nouveau token si on change de projet
 const isDev = import.meta.env.DEV;
-const storageKey = isDev ? 'time-sheet-auth-dev' : 'time-sheet-auth-prod';
+const projectHost = (() => {
+    try {
+        return new URL(supabaseUrl).hostname.replace(/\W+/g, '-');
+    } catch {
+        return 'prod';
+    }
+})();
+const storageKey = isDev ? 'time-sheet-auth-dev-v2' : `time-sheet-auth-${projectHost}-v2`;
 
 export const supabase = createClient<Database>(supabaseUrl, supabaseAnonKey, {
     auth: {
