@@ -47,6 +47,7 @@ export default function App() {
   const [verificationMessage, setVerificationMessage] = useState<string | null>(null);
   const [userRole, setUserRole] = useState<'employee' | 'admin' | null>(null);
   const [viewMode, setViewMode] = useState<'employee' | 'rh'>('employee');
+  const [loadError, setLoadError] = useState<string | null>(null);
 
   const formatMinutes = (totalMinutes: number) => {
     const h = Math.floor(totalMinutes / 60);
@@ -131,12 +132,16 @@ export default function App() {
           if (!isCancelled) {
             setSession(null);
             setShowResetButton(true);
+            setLoadError(error.message || 'Erreur de session');
           }
           return;
         }
 
         const sessionData = data.session;
-        if (!isCancelled) setSession(sessionData);
+        if (!isCancelled) {
+          setSession(sessionData);
+          setLoadError(null);
+        }
 
         if (sessionData?.user && !isCancelled) {
           const name = sessionData.user.user_metadata.full_name || sessionData.user.email?.split('@')[0];
@@ -151,13 +156,17 @@ export default function App() {
 
           if (profileError) {
             console.error('Error fetching profile:', profileError);
+            if (!isCancelled) setLoadError(profileError.message);
           }
 
           if (!isCancelled) setUserRole(profile?.role || 'employee');
         }
       } catch (error) {
         console.error('Error in auth init:', error);
-        if (!isCancelled) setShowResetButton(true);
+        if (!isCancelled) {
+          setShowResetButton(true);
+          setLoadError((error as any)?.message || 'Erreur d\'initialisation auth');
+        }
       } finally {
         if (!isCancelled) {
           setAuthLoading(false);
@@ -195,12 +204,14 @@ export default function App() {
 
           if (error) {
             console.error('Error fetching profile on auth change:', error);
+            setLoadError(error.message);
           }
 
           setUserRole(profile?.role || 'employee');
         }
       } catch (error) {
         console.error('Error in auth state change:', error);
+        setLoadError((error as any)?.message || 'Erreur auth state change');
       } finally {
         if (!isCancelled) setAuthLoading(false);
       }
@@ -217,6 +228,7 @@ export default function App() {
   const fetchWeekData = useCallback(async () => {
     if (!session) return;
     setDataLoading(true);
+    setLoadError(null);
     try {
       const { data, error } = await supabase
         .from('timesheets')
@@ -234,6 +246,7 @@ export default function App() {
       }
     } catch (error) {
       console.error('Error fetching data:', error);
+      setLoadError((error as any)?.message || 'Erreur lors du chargement des heures');
     } finally {
       setDataLoading(false);
     }
@@ -254,6 +267,7 @@ export default function App() {
       if (error) throw error;
     } catch (error) {
       console.error('Error saving data:', error);
+      setLoadError((error as any)?.message || 'Erreur lors de la sauvegarde');
     }
   }, [session, mondayStr]);
 
@@ -657,6 +671,14 @@ export default function App() {
       )}
 
       <main className="max-w-7xl mx-auto px-4 py-6">
+        {loadError && (
+          <div className="mb-4 bg-amber-50 border border-amber-200 text-amber-700 px-4 py-3 rounded-lg">
+            <p className="text-sm font-semibold">Problème de chargement</p>
+            <p className="text-sm">{loadError}</p>
+            <p className="text-xs text-amber-600 mt-1">Vérifie la connexion Supabase (URL/clé) ou les droits RLS.</p>
+          </div>
+        )}
+
         <div className="grid grid-cols-1 md:grid-cols-4 gap-6 mb-8">
           <div className="bg-white p-5 rounded-2xl border border-slate-200 shadow-sm flex items-center justify-between">
             <div>
