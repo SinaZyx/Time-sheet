@@ -482,18 +482,7 @@ export default function App() {
     return (
       <div className="min-h-screen flex flex-col items-center justify-center bg-slate-50 gap-3">
         <Loader2 className="animate-spin text-sky-600" size={40} />
-        <p className="text-slate-500 text-sm">Chargement de l'application...</p>
-        {showResetButton && (
-          <div className="flex flex-col items-center gap-2 mt-2">
-            <p className="text-amber-600 text-xs font-medium">Le chargement semble bloqué ?</p>
-            <button
-              onClick={handleEmergencySignOut}
-              className="px-4 py-2 bg-white border border-slate-300 text-slate-700 rounded-lg text-sm hover:bg-slate-50 shadow-sm transition-all"
-            >
-              Réinitialiser la session
-            </button>
-          </div>
-        )}
+        <p className="text-slate-500 text-sm">Vérification de la session...</p>
       </div>
     );
   }
