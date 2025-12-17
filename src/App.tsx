@@ -75,8 +75,13 @@ export default function App() {
 
   const monday = useMemo(() => getMonday(currentDate), [currentDate, getMonday]);
 
-  // Convertir monday en string pour éviter les problèmes de référence
-  const mondayStr = useMemo(() => monday.toISOString().split('T')[0], [monday]);
+  // Convertir monday en string locale (YYYY-MM-DD) sans décalage UTC
+  const mondayStr = useMemo(() => {
+    const year = monday.getFullYear();
+    const month = String(monday.getMonth() + 1).padStart(2, '0');
+    const day = String(monday.getDate()).padStart(2, '0');
+    return `${year}-${month}-${day}`;
+  }, [monday]);
 
   const clearAuthStorage = () => {
     try {
