@@ -183,7 +183,8 @@ export default function Auth() {
                     </div>
                 </div>
 
-                <button
+                {/* OAuth Google désactivé temporairement */}
+                {/* <button
                     type="button"
                     onClick={async () => {
                         setLoading(true);
@@ -219,7 +220,7 @@ export default function Auth() {
                         />
                     </svg>
                     Google
-                </button>
+                </button> */}
 
                 <div className="mt-6 text-center text-sm text-slate-500">
                     {isSignUp ? "Déjà un compte ?" : "Pas encore de compte ?"}
