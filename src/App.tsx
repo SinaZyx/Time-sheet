@@ -249,28 +249,33 @@ export default function App() {
           const name = newSession.user.user_metadata.full_name || newSession.user.email?.split('@')[0];
           if (name) setCollabName(name);
 
-          // Récupérer le rôle de l'utilisateur seulement si on ne l'a pas déjà
-          // (pour éviter les appels multiples lors de l'oscillation)
-          const { data: profile, error } = await supabase
+          // Charger le rôle de manière asynchrone SANS bloquer authLoading
+          // Cela évite que la requête profile bloque le chargement des données
+          console.log('[onAuthStateChange] Fetching user role asynchronously...');
+          supabase
             .from('profiles')
             .select('role')
             .eq('id', newSession.user.id)
-            .single();
-
-          if (error) {
-            console.error('[onAuthStateChange] Error fetching profile:', error);
-            setLoadError(error.message);
-          }
-
-          console.log('[onAuthStateChange] User role:', profile?.role || 'employee');
-          setUserRole(profile?.role || 'employee');
+            .single()
+            .then(({ data: profile, error }) => {
+              if (error) {
+                console.error('[onAuthStateChange] Error fetching profile:', error);
+                setLoadError(error.message);
+              } else {
+                console.log('[onAuthStateChange] User role:', profile?.role || 'employee');
+                setUserRole(profile?.role || 'employee');
+              }
+            })
+            .catch((error) => {
+              console.error('[onAuthStateChange] Profile fetch failed:', error);
+            });
         }
       } catch (error) {
         console.error('[onAuthStateChange] Error:', error);
         setLoadError((error as any)?.message || 'Erreur auth state change');
       } finally {
         // TOUJOURS mettre authLoading à false après un événement auth valide
-        // Cela débloque le fetch même si initAuth ne s'est pas terminé
+        // SANS attendre le chargement du rôle
         if (!isCancelled) {
           console.log('[onAuthStateChange] Setting authLoading to false (event:', event, ')');
           setAuthLoading(false);
