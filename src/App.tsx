@@ -199,37 +199,52 @@ export default function App() {
 
     const {
       data: { subscription },
-    } = supabase.auth.onAuthStateChange(async (event, session) => {
+    } = supabase.auth.onAuthStateChange(async (event, newSession) => {
       try {
         if (isCancelled) return;
-        setSession(session);
+
+        console.log('[onAuthStateChange] Event:', event, {
+          hasNewSession: !!newSession,
+          userId: newSession?.user?.id,
+          email: newSession?.user?.email
+        });
+
+        // Ne pas détruire la session existante si on reçoit null pendant un refresh de token
+        // Sauf si c'est un vrai SIGNED_OUT
+        if (!newSession && event !== 'SIGNED_OUT') {
+          console.log('[onAuthStateChange] Ignoring null session for event:', event);
+          return;
+        }
+
+        setSession(newSession);
 
         // Gérer la vérification d'email
-        if (event === 'SIGNED_IN' && session?.user?.email_confirmed_at) {
+        if (event === 'SIGNED_IN' && newSession?.user?.email_confirmed_at) {
           setVerificationMessage('Email vérifié avec succès ! Bienvenue.');
           setTimeout(() => setVerificationMessage(null), 5000);
         }
 
-        if (session?.user) {
-          const name = session.user.user_metadata.full_name || session.user.email?.split('@')[0];
+        if (newSession?.user) {
+          const name = newSession.user.user_metadata.full_name || newSession.user.email?.split('@')[0];
           if (name) setCollabName(name);
 
           // Récupérer le rôle de l'utilisateur
           const { data: profile, error } = await supabase
             .from('profiles')
             .select('role')
-            .eq('id', session.user.id)
+            .eq('id', newSession.user.id)
             .single();
 
           if (error) {
-            console.error('Error fetching profile on auth change:', error);
+            console.error('[onAuthStateChange] Error fetching profile:', error);
             setLoadError(error.message);
           }
 
+          console.log('[onAuthStateChange] User role:', profile?.role || 'employee');
           setUserRole(profile?.role || 'employee');
         }
       } catch (error) {
-        console.error('Error in auth state change:', error);
+        console.error('[onAuthStateChange] Error:', error);
         setLoadError((error as any)?.message || 'Erreur auth state change');
       } finally {
         if (!isCancelled) setAuthLoading(false);
@@ -250,7 +265,9 @@ export default function App() {
       return;
     }
 
-    console.log('[fetchWeekData] Fetching data for:', {
+    // Utiliser un identifiant unique pour cette requête
+    const fetchId = `${session.user.id}-${mondayStr}-${Date.now()}`;
+    console.log('[fetchWeekData] Starting fetch', fetchId, {
       user_id: session.user.id,
       week_start_date: mondayStr,
       session_exists: !!session,
@@ -267,7 +284,7 @@ export default function App() {
         .eq('week_start_date', mondayStr)
         .single();
 
-      console.log('[fetchWeekData] Response:', {
+      console.log('[fetchWeekData] Response for', fetchId, ':', {
         hasData: !!data,
         error: error?.message || null,
         errorCode: error?.code || null,
@@ -296,7 +313,7 @@ export default function App() {
       });
       setLoadError((error as any)?.message || 'Erreur lors du chargement des heures');
     } finally {
-      console.log('[fetchWeekData] Fetch complete, setting dataLoading to false');
+      console.log('[fetchWeekData] Fetch complete for', fetchId);
       setDataLoading(false);
     }
   }, [session, mondayStr]);
