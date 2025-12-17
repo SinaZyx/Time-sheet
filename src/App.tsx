@@ -121,11 +121,14 @@ export default function App() {
 
   useEffect(() => {
     let isCancelled = false;
+    let sessionInitialized = false;
+
     const loadingTimer = setTimeout(() => {
       if (authLoading) setShowResetButton(true);
     }, 5000);
     const hardTimeout = setTimeout(() => {
-      if (!isCancelled) {
+      if (!isCancelled && !sessionInitialized) {
+        console.log('[initAuth] Hard timeout reached, forcing auth loading to false');
         setAuthLoading(false);
         setSession(null);
         setShowResetButton(true);
@@ -143,6 +146,8 @@ export default function App() {
             setSession(null);
             setShowResetButton(true);
             setLoadError(error.message || 'Erreur de session');
+            setAuthLoading(false);
+            sessionInitialized = true;
           }
           return;
         }
@@ -155,10 +160,8 @@ export default function App() {
           emailConfirmed: !!sessionData?.user?.email_confirmed_at
         });
 
-        if (!isCancelled) {
-          setSession(sessionData);
-          setLoadError(null);
-        }
+        // NE PAS appeler setSession ici, laisser onAuthStateChange le faire
+        // pour éviter la double mise à jour qui cause l'oscillation
 
         if (sessionData?.user && !isCancelled) {
           const name = sessionData.user.user_metadata.full_name || sessionData.user.email?.split('@')[0];
@@ -179,18 +182,18 @@ export default function App() {
           console.log('[initAuth] User role:', profile?.role || 'employee');
           if (!isCancelled) setUserRole(profile?.role || 'employee');
         }
+
+        if (!isCancelled) {
+          sessionInitialized = true;
+          setLoadError(null);
+        }
       } catch (error) {
         console.error('[initAuth] Error in auth init:', error);
         if (!isCancelled) {
           setShowResetButton(true);
           setLoadError((error as any)?.message || 'Erreur d\'initialisation auth');
-        }
-      } finally {
-        if (!isCancelled) {
-          console.log('[initAuth] Auth loading complete');
           setAuthLoading(false);
-          clearTimeout(loadingTimer);
-          clearTimeout(hardTimeout);
+          sessionInitialized = true;
         }
       }
     };
@@ -206,7 +209,8 @@ export default function App() {
         console.log('[onAuthStateChange] Event:', event, {
           hasNewSession: !!newSession,
           userId: newSession?.user?.id,
-          email: newSession?.user?.email
+          email: newSession?.user?.email,
+          sessionInitialized
         });
 
         // Ne pas détruire la session existante si on reçoit null pendant un refresh de token
@@ -215,6 +219,9 @@ export default function App() {
           console.log('[onAuthStateChange] Ignoring null session for event:', event);
           return;
         }
+
+        // Marquer que la session a été initialisée
+        sessionInitialized = true;
 
         setSession(newSession);
 
@@ -228,7 +235,8 @@ export default function App() {
           const name = newSession.user.user_metadata.full_name || newSession.user.email?.split('@')[0];
           if (name) setCollabName(name);
 
-          // Récupérer le rôle de l'utilisateur
+          // Récupérer le rôle de l'utilisateur seulement si on ne l'a pas déjà
+          // (pour éviter les appels multiples lors de l'oscillation)
           const { data: profile, error } = await supabase
             .from('profiles')
             .select('role')
@@ -247,7 +255,11 @@ export default function App() {
         console.error('[onAuthStateChange] Error:', error);
         setLoadError((error as any)?.message || 'Erreur auth state change');
       } finally {
-        if (!isCancelled) setAuthLoading(false);
+        // Ne mettre authLoading à false que si la session est bien initialisée
+        if (!isCancelled && sessionInitialized) {
+          console.log('[onAuthStateChange] Setting authLoading to false');
+          setAuthLoading(false);
+        }
       }
     });
 
@@ -266,7 +278,7 @@ export default function App() {
     }
 
     // Utiliser un identifiant unique pour cette requête
-    const fetchId = `${session.user.id}-${mondayStr}-${Date.now()}`;
+    const fetchId = `${session.user.id.slice(0, 8)}-${mondayStr}-${Date.now()}`;
     console.log('[fetchWeekData] Starting fetch', fetchId, {
       user_id: session.user.id,
       week_start_date: mondayStr,
@@ -276,13 +288,22 @@ export default function App() {
 
     setDataLoading(true);
     setLoadError(null);
+
+    // Timeout pour détecter si la requête se bloque
+    const timeoutId = setTimeout(() => {
+      console.error('[fetchWeekData] ⏱️ Timeout! Request took more than 10s for', fetchId);
+    }, 10000);
+
     try {
+      console.log('[fetchWeekData] Calling supabase.from(timesheets)...');
       const { data, error } = await supabase
         .from('timesheets')
         .select('grid_data')
         .eq('user_id', session.user.id)
         .eq('week_start_date', mondayStr)
         .single();
+
+      clearTimeout(timeoutId);
 
       console.log('[fetchWeekData] Response for', fetchId, ':', {
         hasData: !!data,
@@ -304,6 +325,7 @@ export default function App() {
         setGrid(Array(7).fill(null).map(() => Array(TOTAL_SLOTS).fill(false)));
       }
     } catch (error) {
+      clearTimeout(timeoutId);
       console.error('[fetchWeekData] ❌ Error fetching data:', error);
       console.error('[fetchWeekData] Error details:', {
         message: (error as any)?.message,
