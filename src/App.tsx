@@ -114,6 +114,13 @@ export default function App() {
     const loadingTimer = setTimeout(() => {
       if (authLoading) setShowResetButton(true);
     }, 5000);
+    const hardTimeout = setTimeout(() => {
+      if (!isCancelled) {
+        setAuthLoading(false);
+        setSession(null);
+        setShowResetButton(true);
+      }
+    }, 8000);
 
     const initAuth = async () => {
       try {
@@ -155,6 +162,7 @@ export default function App() {
         if (!isCancelled) {
           setAuthLoading(false);
           clearTimeout(loadingTimer);
+          clearTimeout(hardTimeout);
         }
       }
     };
@@ -201,6 +209,7 @@ export default function App() {
     return () => {
       isCancelled = true;
       clearTimeout(loadingTimer);
+      clearTimeout(hardTimeout);
       subscription.unsubscribe();
     };
   }, []);
