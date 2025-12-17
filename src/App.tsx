@@ -204,17 +204,10 @@ export default function App() {
           sessionInitialized = true;
         }
       } finally {
-        // IMPORTANT: Toujours mettre authLoading à false après initAuth
-        // Même si onAuthStateChange n'a pas encore été appelé
+        // Ne rien faire ici - laisser onAuthStateChange gérer authLoading
+        // Cela évite les conflits et les double mises à jour
         if (!isCancelled) {
-          console.log('[initAuth] Finally block - setting authLoading to false if needed');
-          // Attendre un peu pour laisser onAuthStateChange se déclencher
-          setTimeout(() => {
-            if (!isCancelled) {
-              console.log('[initAuth] Forcing authLoading to false after timeout');
-              setAuthLoading(false);
-            }
-          }, 1000);
+          console.log('[initAuth] Finally block - completed');
         }
       }
     };
@@ -276,9 +269,10 @@ export default function App() {
         console.error('[onAuthStateChange] Error:', error);
         setLoadError((error as any)?.message || 'Erreur auth state change');
       } finally {
-        // Ne mettre authLoading à false que si la session est bien initialisée
-        if (!isCancelled && sessionInitialized) {
-          console.log('[onAuthStateChange] Setting authLoading to false');
+        // TOUJOURS mettre authLoading à false après un événement auth valide
+        // Cela débloque le fetch même si initAuth ne s'est pas terminé
+        if (!isCancelled) {
+          console.log('[onAuthStateChange] Setting authLoading to false (event:', event, ')');
           setAuthLoading(false);
         }
       }
