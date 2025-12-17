@@ -74,10 +74,17 @@ export default function App() {
   const mondayStr = useMemo(() => monday.toISOString().split('T')[0], [monday]);
 
   const clearAuthStorage = () => {
-    const keys = ['time-sheet-auth-dev', 'time-sheet-auth-prod', 'supabase.auth.token'];
-    keys.forEach((k) => {
-      try { localStorage.removeItem(k); } catch { /* ignore */ }
-    });
+    try {
+      const explicitKeys = ['time-sheet-auth-dev', 'time-sheet-auth-prod', 'supabase.auth.token'];
+      const dynamicKeys = Object.keys(localStorage).filter((key) =>
+        key.startsWith('sb-') && key.endsWith('-auth-token')
+      );
+      [...explicitKeys, ...dynamicKeys].forEach((k) => {
+        try { localStorage.removeItem(k); } catch { /* ignore */ }
+      });
+    } catch (error) {
+      console.error('Erreur lors du nettoyage du stockage auth:', error);
+    }
   };
 
   const handleEmergencySignOut = useCallback(async () => {
@@ -90,6 +97,7 @@ export default function App() {
       setSession(null);       // retourne sur l'écran Auth sans recharger la page
       setAuthLoading(false);
       setShowResetButton(false);
+      window.location.reload();
     }
   }, []);
 
@@ -102,57 +110,62 @@ export default function App() {
   );
 
   useEffect(() => {
+    let isCancelled = false;
     const loadingTimer = setTimeout(() => {
       if (authLoading) setShowResetButton(true);
     }, 5000);
 
-    supabase.auth.getSession().then(async ({ data, error }) => {
+    const initAuth = async () => {
       try {
+        const { data, error } = await supabase.auth.getSession();
         if (error) {
           console.error('Error getting session:', error);
           await supabase.auth.signOut(); // Session corrompue → forcer la déconnexion
-          setSession(null);
+          if (!isCancelled) {
+            setSession(null);
+            setShowResetButton(true);
+          }
           return;
         }
 
-        const session = data.session;
-        setSession(session);
-        if (session?.user) {
-          const name = session.user.user_metadata.full_name || session.user.email?.split('@')[0];
+        const sessionData = data.session;
+        if (!isCancelled) setSession(sessionData);
+
+        if (sessionData?.user && !isCancelled) {
+          const name = sessionData.user.user_metadata.full_name || sessionData.user.email?.split('@')[0];
           if (name) setCollabName(name);
 
           // Récupérer le rôle de l'utilisateur
           const { data: profile, error: profileError } = await supabase
             .from('profiles')
             .select('role')
-            .eq('id', session.user.id)
+            .eq('id', sessionData.user.id)
             .single();
 
           if (profileError) {
             console.error('Error fetching profile:', profileError);
           }
 
-          setUserRole(profile?.role || 'employee');
+          if (!isCancelled) setUserRole(profile?.role || 'employee');
         }
       } catch (error) {
         console.error('Error in auth init:', error);
-        setShowResetButton(true);
+        if (!isCancelled) setShowResetButton(true);
       } finally {
-        setAuthLoading(false);
-        clearTimeout(loadingTimer);
+        if (!isCancelled) {
+          setAuthLoading(false);
+          clearTimeout(loadingTimer);
+        }
       }
-    }).catch(async (error) => {
-      console.error('Error getting session:', error);
-      await supabase.auth.signOut();
-      setShowResetButton(true);
-      setAuthLoading(false);
-      clearTimeout(loadingTimer);
-    });
+    };
+
+    initAuth();
 
     const {
       data: { subscription },
     } = supabase.auth.onAuthStateChange(async (event, session) => {
       try {
+        if (isCancelled) return;
         setSession(session);
 
         // Gérer la vérification d'email
@@ -180,10 +193,13 @@ export default function App() {
         }
       } catch (error) {
         console.error('Error in auth state change:', error);
+      } finally {
+        if (!isCancelled) setAuthLoading(false);
       }
     });
 
     return () => {
+      isCancelled = true;
       clearTimeout(loadingTimer);
       subscription.unsubscribe();
     };
