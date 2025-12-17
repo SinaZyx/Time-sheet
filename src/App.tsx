@@ -48,6 +48,10 @@ export default function App() {
   const [userRole, setUserRole] = useState<'employee' | 'admin' | null>(null);
   const [viewMode, setViewMode] = useState<'employee' | 'rh'>('employee');
   const [loadError, setLoadError] = useState<string | null>(null);
+  const [isNameModalOpen, setIsNameModalOpen] = useState(false);
+  const [newName, setNewName] = useState('');
+  const [savingName, setSavingName] = useState(false);
+  const [nameError, setNameError] = useState<string | null>(null);
 
   const formatMinutes = (totalMinutes: number) => {
     const h = Math.floor(totalMinutes / 60);
@@ -340,6 +344,47 @@ export default function App() {
     return Math.max(0, totalHours - 35);
   };
 
+  const openNameModal = () => {
+    setNewName(collabName);
+    setNameError(null);
+    setIsNameModalOpen(true);
+  };
+
+  const saveNameChange = async () => {
+    const trimmed = newName.trim();
+    if (!trimmed) {
+      setNameError('Le nom/prénom ne peut pas être vide.');
+      return;
+    }
+    setSavingName(true);
+    setNameError(null);
+    try {
+      // Mettre à jour le profil
+      const { error: profileError } = await supabase
+        .from('profiles')
+        .update({ full_name: trimmed, updated_at: new Date().toISOString() })
+        .eq('id', session?.user.id);
+
+      if (profileError) throw profileError;
+
+      // Mettre à jour les métadonnées du user
+      const { error: userError } = await supabase.auth.updateUser({
+        data: { full_name: trimmed },
+      });
+      if (userError) throw userError;
+
+      setCollabName(trimmed);
+      setIsNameModalOpen(false);
+      setLoadError(null);
+    } catch (error) {
+      console.error('Error updating name:', error);
+      setNameError((error as any)?.message || 'Impossible de mettre à jour le nom.');
+      setLoadError((error as any)?.message || 'Impossible de mettre à jour le nom.');
+    } finally {
+      setSavingName(false);
+    }
+  };
+
   const getDayHours = (dayIndex: number) => grid[dayIndex].filter(Boolean).length * 0.5;
 
   const formatRange = (startSlot: number, endSlot: number) => {
@@ -609,6 +654,13 @@ export default function App() {
                     placeholder="Nom Prénom"
                   />
                 </div>
+                <button
+                  onClick={openNameModal}
+                  className="ml-2 text-xs text-sky-600 hover:text-sky-700 font-semibold px-2 py-1 bg-sky-50 rounded-md border border-sky-100 hover:bg-sky-100 transition-colors"
+                  title="Modifier le nom/prénom associé"
+                >
+                  Corriger
+                </button>
               </div>
 
               <button
@@ -818,6 +870,51 @@ export default function App() {
           </div>
         </div>
       </main>
+
+      {isNameModalOpen && (
+        <div className="fixed inset-0 bg-black/40 backdrop-blur-sm flex items-center justify-center z-50 px-4">
+          <div className="bg-white rounded-2xl shadow-xl border border-slate-200 w-full max-w-md p-6 relative">
+            <div className="flex items-start justify-between mb-4">
+              <div>
+                <h2 className="text-lg font-bold text-slate-800">Modifier le nom/prénom</h2>
+                <p className="text-sm text-slate-500">Met à jour le nom associé à ton compte.</p>
+              </div>
+              <button
+                onClick={() => setIsNameModalOpen(false)}
+                className="p-2 text-slate-400 hover:text-slate-600 hover:bg-slate-100 rounded-lg"
+              >
+                ×
+              </button>
+            </div>
+
+            <label className="block text-sm font-medium text-slate-700 mb-2">Nom & Prénom</label>
+            <input
+              type="text"
+              value={newName}
+              onChange={(e) => setNewName(e.target.value)}
+              className="w-full px-3 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-sky-500 focus:border-sky-500 outline-none"
+              placeholder="Jean Dupont"
+            />
+            {nameError && <p className="text-xs text-red-600 mt-1">{nameError}</p>}
+
+            <div className="flex justify-end gap-2 mt-6">
+              <button
+                onClick={() => setIsNameModalOpen(false)}
+                className="px-4 py-2 text-slate-600 hover:text-slate-800 rounded-lg border border-slate-200 hover:bg-slate-50 transition-colors"
+              >
+                Annuler
+              </button>
+              <button
+                onClick={saveNameChange}
+                disabled={savingName}
+                className="px-4 py-2 bg-sky-600 hover:bg-sky-700 text-white rounded-lg font-semibold shadow-sm transition-all disabled:opacity-60 disabled:cursor-not-allowed"
+              >
+                {savingName ? 'Enregistrement...' : 'Enregistrer'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div >
   );
 }
