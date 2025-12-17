@@ -139,6 +139,13 @@ export default function App() {
       try {
         console.log('[initAuth] Starting session check...');
         const { data, error } = await supabase.auth.getSession();
+
+        console.log('[initAuth] getSession completed:', {
+          hasError: !!error,
+          hasData: !!data,
+          hasSession: !!data?.session
+        });
+
         if (error) {
           console.error('[initAuth] Error getting session:', error);
           await supabase.auth.signOut(); // Session corrompue → forcer la déconnexion
@@ -186,6 +193,7 @@ export default function App() {
         if (!isCancelled) {
           sessionInitialized = true;
           setLoadError(null);
+          console.log('[initAuth] Completed successfully, sessionInitialized:', sessionInitialized);
         }
       } catch (error) {
         console.error('[initAuth] Error in auth init:', error);
@@ -194,6 +202,19 @@ export default function App() {
           setLoadError((error as any)?.message || 'Erreur d\'initialisation auth');
           setAuthLoading(false);
           sessionInitialized = true;
+        }
+      } finally {
+        // IMPORTANT: Toujours mettre authLoading à false après initAuth
+        // Même si onAuthStateChange n'a pas encore été appelé
+        if (!isCancelled) {
+          console.log('[initAuth] Finally block - setting authLoading to false if needed');
+          // Attendre un peu pour laisser onAuthStateChange se déclencher
+          setTimeout(() => {
+            if (!isCancelled) {
+              console.log('[initAuth] Forcing authLoading to false after timeout');
+              setAuthLoading(false);
+            }
+          }, 1000);
         }
       }
     };
