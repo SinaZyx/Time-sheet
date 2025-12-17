@@ -134,9 +134,10 @@ export default function App() {
 
     const initAuth = async () => {
       try {
+        console.log('[initAuth] Starting session check...');
         const { data, error } = await supabase.auth.getSession();
         if (error) {
-          console.error('Error getting session:', error);
+          console.error('[initAuth] Error getting session:', error);
           await supabase.auth.signOut(); // Session corrompue → forcer la déconnexion
           if (!isCancelled) {
             setSession(null);
@@ -147,6 +148,13 @@ export default function App() {
         }
 
         const sessionData = data.session;
+        console.log('[initAuth] Session retrieved:', {
+          hasSession: !!sessionData,
+          userId: sessionData?.user?.id,
+          email: sessionData?.user?.email,
+          emailConfirmed: !!sessionData?.user?.email_confirmed_at
+        });
+
         if (!isCancelled) {
           setSession(sessionData);
           setLoadError(null);
@@ -164,20 +172,22 @@ export default function App() {
             .single();
 
           if (profileError) {
-            console.error('Error fetching profile:', profileError);
+            console.error('[initAuth] Error fetching profile:', profileError);
             if (!isCancelled) setLoadError(profileError.message);
           }
 
+          console.log('[initAuth] User role:', profile?.role || 'employee');
           if (!isCancelled) setUserRole(profile?.role || 'employee');
         }
       } catch (error) {
-        console.error('Error in auth init:', error);
+        console.error('[initAuth] Error in auth init:', error);
         if (!isCancelled) {
           setShowResetButton(true);
           setLoadError((error as any)?.message || 'Erreur d\'initialisation auth');
         }
       } finally {
         if (!isCancelled) {
+          console.log('[initAuth] Auth loading complete');
           setAuthLoading(false);
           clearTimeout(loadingTimer);
           clearTimeout(hardTimeout);
@@ -235,7 +245,18 @@ export default function App() {
   }, []);
 
   const fetchWeekData = useCallback(async () => {
-    if (!session) return;
+    if (!session) {
+      console.log('[fetchWeekData] No session, skipping fetch');
+      return;
+    }
+
+    console.log('[fetchWeekData] Fetching data for:', {
+      user_id: session.user.id,
+      week_start_date: mondayStr,
+      session_exists: !!session,
+      email: session.user.email
+    });
+
     setDataLoading(true);
     setLoadError(null);
     try {
@@ -246,15 +267,19 @@ export default function App() {
         .eq('week_start_date', mondayStr)
         .single();
 
+      console.log('[fetchWeekData] Response:', { data: !!data, error: error?.message || null, errorCode: error?.code || null });
+
       if (error && error.code !== 'PGRST116') throw error;
 
       if (data) {
+        console.log('[fetchWeekData] Found data, grid has', data.grid_data?.length, 'days');
         setGrid(data.grid_data);
       } else {
+        console.log('[fetchWeekData] No data found for this week, creating empty grid');
         setGrid(Array(7).fill(null).map(() => Array(TOTAL_SLOTS).fill(false)));
       }
     } catch (error) {
-      console.error('Error fetching data:', error);
+      console.error('[fetchWeekData] Error fetching data:', error);
       setLoadError((error as any)?.message || 'Erreur lors du chargement des heures');
     } finally {
       setDataLoading(false);
@@ -281,8 +306,16 @@ export default function App() {
   }, [session, mondayStr]);
 
   useEffect(() => {
+    console.log('[useEffect fetchWeekData] Triggered with:', {
+      hasSession: !!session,
+      mondayStr,
+      userId: session?.user?.id,
+      email: session?.user?.email
+    });
     if (session) {
       fetchWeekData();
+    } else {
+      console.log('[useEffect fetchWeekData] Skipping fetch - no session');
     }
   }, [session, fetchWeekData]);
 
