@@ -60,14 +60,18 @@ export default function App() {
   const [newName, setNewName] = useState('');
   const [savingName, setSavingName] = useState(false);
   const [nameError, setNameError] = useState<string | null>(null);
-  const [isMonthlyModalOpen, setIsMonthlyModalOpen] = useState(false);
+  const [isExportModalOpen, setIsExportModalOpen] = useState(false);
+  const [exportPeriod, setExportPeriod] = useState<'month' | 'week' | 'custom'>('month');
   const [selectedExportMonth, setSelectedExportMonth] = useState(() => {
     const now = new Date();
     return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
   });
-  const [monthlyRecipient, setMonthlyRecipient] = useState('');
-  const [monthlyExporting, setMonthlyExporting] = useState(false);
-  const [monthlyError, setMonthlyError] = useState<string | null>(null);
+  const [selectedExportWeek, setSelectedExportWeek] = useState('');
+  const [exportStartDate, setExportStartDate] = useState('');
+  const [exportEndDate, setExportEndDate] = useState('');
+  const [exportRecipient, setExportRecipient] = useState('');
+  const [exportingPeriod, setExportingPeriod] = useState(false);
+  const [exportError, setExportError] = useState<string | null>(null);
 
   const formatMinutes = (totalMinutes: number) => {
     const h = Math.floor(totalMinutes / 60);
@@ -487,12 +491,17 @@ export default function App() {
     return Math.max(0, totalHours - 35);
   };
 
-  const openMonthlyModal = () => {
+  const openExportModal = () => {
     const monthValue = `${currentDate.getFullYear()}-${String(currentDate.getMonth() + 1).padStart(2, '0')}`;
+    const weekValue = formatDateLocal(getMonday(currentDate));
     setSelectedExportMonth(monthValue);
-    setMonthlyRecipient('');
-    setMonthlyError(null);
-    setIsMonthlyModalOpen(true);
+    setSelectedExportWeek(weekValue);
+    setExportStartDate(weekValue);
+    setExportEndDate(formatDateLocal(currentDate));
+    setExportRecipient('');
+    setExportError(null);
+    setExportPeriod('month');
+    setIsExportModalOpen(true);
   };
 
   const downloadBlob = (blob: Blob, filename: string) => {
@@ -504,53 +513,108 @@ export default function App() {
     URL.revokeObjectURL(url);
   };
 
-  const fetchMonthlyTimesheets = async (): Promise<MonthlyTimesheet[] | null> => {
+  const getWeekLabel = (weekValue: string) => {
+    const date = new Date(weekValue);
+    if (Number.isNaN(date.getTime())) return weekValue;
+    const mondayDate = getMonday(date);
+    const weekEnd = new Date(mondayDate);
+    weekEnd.setDate(mondayDate.getDate() + 6);
+    return `Semaine du ${mondayDate.toLocaleDateString('fr-FR')} au ${weekEnd.toLocaleDateString('fr-FR')}`;
+  };
+
+  const getPeriodLabel = () => {
+    if (exportPeriod === 'month') {
+      return getMonthLabel(selectedExportMonth);
+    }
+    if (exportPeriod === 'week') {
+      return getWeekLabel(selectedExportWeek);
+    }
+    if (exportStartDate && exportEndDate) {
+      const start = new Date(exportStartDate);
+      const end = new Date(exportEndDate);
+      if (Number.isNaN(start.getTime()) || Number.isNaN(end.getTime())) return 'Période personnalisée';
+      return `Du ${start.toLocaleDateString('fr-FR')} au ${end.toLocaleDateString('fr-FR')}`;
+    }
+    return 'Période personnalisée';
+  };
+
+  const getPeriodSuffix = () => {
+    if (exportPeriod === 'month') return selectedExportMonth || 'periode';
+    if (exportPeriod === 'week') {
+      if (!selectedExportWeek) return 'semaine';
+      const mondayDate = formatDateLocal(getMonday(new Date(selectedExportWeek)));
+      return `semaine_${mondayDate}`;
+    }
+    if (exportStartDate && exportEndDate) return `${exportStartDate}_au_${exportEndDate}`;
+    return 'periode';
+  };
+
+  const fetchPeriodTimesheets = async (): Promise<MonthlyTimesheet[] | null> => {
     if (!session) return null;
-    if (!selectedExportMonth) {
-      setMonthlyError('Sélectionne un mois.');
-      return null;
-    }
 
-    const [year, month] = selectedExportMonth.split('-').map(Number);
-    if (!year || !month) {
-      setMonthlyError('Mois invalide.');
-      return null;
-    }
+    setExportingPeriod(true);
+    setExportError(null);
 
-    setMonthlyExporting(true);
-    setMonthlyError(null);
     try {
-      const firstDay = new Date(year, month - 1, 1);
-      const lastDay = new Date(year, month, 0);
-      const start = formatDateLocal(firstDay);
-      const end = formatDateLocal(lastDay);
-
-      const { data, error } = await supabase
+      let query = supabase
         .from('timesheets')
         .select('grid_data, week_start_date')
-        .eq('user_id', session.user.id)
-        .gte('week_start_date', start)
-        .lte('week_start_date', end)
-        .order('week_start_date', { ascending: true });
+        .eq('user_id', session.user.id);
+
+      if (exportPeriod === 'month') {
+        if (!selectedExportMonth) {
+          setExportError('Sélectionne un mois.');
+          return null;
+        }
+        const [year, month] = selectedExportMonth.split('-').map(Number);
+        if (!year || !month) {
+          setExportError('Mois invalide.');
+          return null;
+        }
+        const firstDay = new Date(year, month - 1, 1);
+        const lastDay = new Date(year, month, 0);
+        const start = formatDateLocal(firstDay);
+        const end = formatDateLocal(lastDay);
+        query = query.gte('week_start_date', start).lte('week_start_date', end);
+      } else if (exportPeriod === 'week') {
+        if (!selectedExportWeek) {
+          setExportError('Sélectionne une semaine.');
+          return null;
+        }
+        const weekStart = formatDateLocal(getMonday(new Date(selectedExportWeek)));
+        query = query.eq('week_start_date', weekStart);
+      } else if (exportPeriod === 'custom') {
+        if (!exportStartDate || !exportEndDate) {
+          setExportError('Sélectionne une date de début et une date de fin.');
+          return null;
+        }
+        if (exportStartDate > exportEndDate) {
+          setExportError('La date de début doit être avant la date de fin.');
+          return null;
+        }
+        query = query.gte('week_start_date', exportStartDate).lte('week_start_date', exportEndDate);
+      }
+
+      const { data, error } = await query.order('week_start_date', { ascending: true });
 
       if (error) throw error;
       if (!data || data.length === 0) {
-        setMonthlyError('Aucune feuille de temps pour ce mois.');
+        setExportError('Aucune feuille de temps pour cette période.');
         return [];
       }
 
       return data as MonthlyTimesheet[];
     } catch (error) {
-      console.error('Error fetching monthly timesheets:', error);
-      setMonthlyError((error as any)?.message || 'Erreur lors du chargement du mois.');
+      console.error('Error fetching period timesheets:', error);
+      setExportError((error as any)?.message || 'Erreur lors du chargement de la période.');
       return null;
     } finally {
-      setMonthlyExporting(false);
+      setExportingPeriod(false);
     }
   };
 
-  const buildMonthlyPdf = async () => {
-    const timesheets = await fetchMonthlyTimesheets();
+  const buildPeriodPdf = async () => {
+    const timesheets = await fetchPeriodTimesheets();
     if (!timesheets || timesheets.length === 0) return null;
 
     const employeeName = collabName || session?.user?.email?.split('@')[0] || 'Collaborateur';
@@ -562,35 +626,35 @@ export default function App() {
 
     const blob = generateEmployeeMonthlyPDF(pdfData);
     const safeName = employeeName.replace(/\s+/g, '_');
-    const filename = `releve_heures_${safeName}_${selectedExportMonth}.pdf`;
-    const monthLabel = getMonthLabel(selectedExportMonth);
+    const filename = `releve_heures_${safeName}_${getPeriodSuffix()}.pdf`;
+    const periodLabel = getPeriodLabel();
 
-    return { blob, filename, monthLabel, employeeName };
+    return { blob, filename, periodLabel, employeeName };
   };
 
-  const handleMonthlyDownload = async () => {
-    const result = await buildMonthlyPdf();
+  const handlePeriodDownload = async () => {
+    const result = await buildPeriodPdf();
     if (!result) return;
     downloadBlob(result.blob, result.filename);
   };
 
-  const handleMonthlyEmail = async () => {
-    const recipient = monthlyRecipient.trim();
+  const handlePeriodEmail = async () => {
+    const recipient = exportRecipient.trim();
     if (!recipient) {
-      setMonthlyError('Renseigne l’email du destinataire.');
+      setExportError('Renseigne l’email du destinataire.');
       return;
     }
 
-    const result = await buildMonthlyPdf();
+    const result = await buildPeriodPdf();
     if (!result) return;
 
     downloadBlob(result.blob, result.filename);
 
-    const subject = `Feuille de temps - ${result.employeeName} - ${result.monthLabel}`;
+    const subject = `Feuille de temps - ${result.employeeName} - ${result.periodLabel}`;
     const body = [
       'Bonjour,',
       '',
-      `Veuillez trouver ci-joint ma feuille de temps pour ${result.monthLabel}.`,
+      `Veuillez trouver ci-joint ma feuille de temps pour ${result.periodLabel}.`,
       '',
       'Cordialement,',
       result.employeeName,
@@ -867,7 +931,7 @@ export default function App() {
               </div>
               <div>
                 <h1 className="text-xl font-bold text-slate-800">Planning Hebdomadaire</h1>
-                <div className="flex items-center gap-2 mt-1">
+                <div className="flex items-center gap-2 mt-1 flex-wrap">
                   <button
                     onClick={() => changeWeek(-1)}
                     className="p-0.5 hover:bg-slate-100 rounded-full text-slate-400 hover:text-sky-600 transition-colors"
@@ -875,7 +939,7 @@ export default function App() {
                   >
                     <ChevronLeft size={18} />
                   </button>
-                  <span className="text-sm text-slate-500 font-medium capitalize min-w-[180px] text-center select-none">
+                  <span className="text-xs sm:text-sm text-slate-500 font-medium capitalize min-w-[140px] sm:min-w-[180px] text-center select-none">
                     {monday.toLocaleDateString("fr-FR", { day: "numeric", month: "long" })} -{" "}
                     {weekDates[6].toLocaleDateString("fr-FR", { day: "numeric", month: "long", year: "numeric" })}
                   </span>
@@ -888,7 +952,7 @@ export default function App() {
                   </button>
                   <button
                     onClick={() => setCurrentDate(new Date())}
-                    className="text-xs text-sky-600 hover:text-sky-700 font-medium ml-2 px-2 py-0.5 bg-sky-50 rounded hover:bg-sky-100 transition-colors"
+                    className="text-xs text-sky-600 hover:text-sky-700 font-medium ml-0 sm:ml-2 px-2 py-0.5 bg-sky-50 rounded hover:bg-sky-100 transition-colors"
                   >
                     Aujourd'hui
                   </button>
@@ -896,9 +960,9 @@ export default function App() {
               </div>
             </div>
 
-            <div className="flex items-center gap-2 flex-wrap justify-end">
+            <div className="flex items-center gap-2 flex-wrap justify-start md:justify-end w-full md:w-auto">
               {dataLoading && <Loader2 className="animate-spin text-sky-600 mr-2" size={20} />}
-              <div className="flex items-center gap-3 bg-slate-100 p-2 rounded-lg border border-slate-200">
+              <div className="flex items-center gap-3 bg-slate-100 p-2 rounded-lg border border-slate-200 w-full sm:w-auto">
                 <User size={18} className="text-slate-400 ml-2" />
                 <div className="flex flex-col">
                   <span className="text-[11px] uppercase tracking-wide text-slate-500 font-semibold">
@@ -908,7 +972,7 @@ export default function App() {
                     type="text"
                     value={collabName}
                     onChange={(e) => setCollabName(e.target.value)}
-                    className="bg-transparent border-none outline-none text-sm font-medium w-48 text-slate-700 placeholder:text-slate-400"
+                    className="bg-transparent border-none outline-none text-sm font-medium w-32 sm:w-48 text-slate-700 placeholder:text-slate-400"
                     placeholder="Nom Prénom"
                   />
                 </div>
@@ -931,20 +995,20 @@ export default function App() {
               <div className="h-6 w-px bg-slate-300 mx-1" />
               <button
                 onClick={exportExcel}
-                className="flex items-center gap-2 px-4 py-2 bg-white border border-slate-300 hover:bg-slate-50 text-slate-700 rounded-lg font-medium text-sm transition-all"
+                className="flex items-center gap-2 px-3 sm:px-4 py-2 bg-white border border-slate-300 hover:bg-slate-50 text-slate-700 rounded-lg font-medium text-xs sm:text-sm transition-all"
               >
                 <FileSpreadsheet size={16} /> Excel
               </button>
               <button
-                onClick={openMonthlyModal}
-                className="flex items-center gap-2 px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg font-medium text-sm shadow-md shadow-indigo-200 transition-all active:scale-95"
-                title="Exporter toutes les feuilles du mois"
+                onClick={openExportModal}
+                className="flex items-center gap-2 px-3 sm:px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg font-medium text-xs sm:text-sm shadow-md shadow-indigo-200 transition-all active:scale-95"
+                title="Exporter les feuilles de temps"
               >
-                <FileText size={16} /> Mois
+                <FileText size={16} /> Feuilles
               </button>
               <button
                 onClick={exportPDF}
-                className="flex items-center gap-2 px-4 py-2 bg-sky-600 hover:bg-sky-700 text-white rounded-lg font-medium text-sm shadow-md shadow-sky-200 transition-all active:scale-95"
+                className="flex items-center gap-2 px-3 sm:px-4 py-2 bg-sky-600 hover:bg-sky-700 text-white rounded-lg font-medium text-xs sm:text-sm shadow-md shadow-sky-200 transition-all active:scale-95"
               >
                 <Download size={16} /> PDF
               </button>
@@ -953,7 +1017,7 @@ export default function App() {
                   <div className="h-6 w-px bg-slate-300 mx-1" />
                   <button
                     onClick={() => setViewMode('rh')}
-                    className="flex items-center gap-2 px-4 py-2 bg-purple-600 hover:bg-purple-700 text-white rounded-lg font-medium text-sm transition-all"
+                    className="flex items-center gap-2 px-3 sm:px-4 py-2 bg-purple-600 hover:bg-purple-700 text-white rounded-lg font-medium text-xs sm:text-sm transition-all"
                     title="Tableau de bord RH"
                   >
                     <Users size={16} /> RH
@@ -1047,22 +1111,23 @@ export default function App() {
           </div>
         </div>
 
-        <div className="bg-white rounded-2xl shadow-sm border border-slate-200 overflow-hidden select-none">
-          <div className="grid grid-cols-[80px_1fr_1fr_1fr_1fr_1fr_1fr_1fr] border-b border-slate-200">
-            <div className="p-4 bg-slate-50 border-r border-slate-200" />
+        <div className="bg-white rounded-2xl shadow-sm border border-slate-200 overflow-x-auto select-none">
+          <div className="min-w-[900px]">
+            <div className="grid grid-cols-[60px_repeat(7,1fr)] sm:grid-cols-[80px_1fr_1fr_1fr_1fr_1fr_1fr_1fr] border-b border-slate-200">
+            <div className="p-3 sm:p-4 bg-slate-50 border-r border-slate-200" />
             {DAYS.map((day, i) => {
               const isToday = weekDates[i].toDateString() === new Date().toDateString();
               return (
                 <div
                   key={day}
-                  className={`p-3 text-center border-r border-slate-100 last:border-r-0 ${isToday ? "bg-sky-50" : "bg-white"
+                  className={`p-2 sm:p-3 text-center border-r border-slate-100 last:border-r-0 ${isToday ? "bg-sky-50" : "bg-white"
                     }`}
                 >
-                  <p className={`text-xs font-bold uppercase mb-1 ${isToday ? "text-sky-600" : "text-slate-400"}`}>
+                  <p className={`text-[10px] sm:text-xs font-bold uppercase mb-1 ${isToday ? "text-sky-600" : "text-slate-400"}`}>
                     {day}
                   </p>
                   <div
-                    className={`mx-auto w-8 h-8 flex items-center justify-center rounded-full font-bold text-sm ${isToday ? "bg-sky-600 text-white" : "text-slate-700"
+                    className={`mx-auto w-7 h-7 sm:w-8 sm:h-8 flex items-center justify-center rounded-full font-bold text-xs sm:text-sm ${isToday ? "bg-sky-600 text-white" : "text-slate-700"
                       }`}
                   >
                     {weekDates[i].getDate()}
@@ -1070,18 +1135,18 @@ export default function App() {
                 </div>
               );
             })}
-          </div>
+            </div>
 
-          <div className="relative">
+            <div className="relative">
             {timeLabels.map((time, slotIndex) => {
               const isHourLine = slotIndex % 2 === 0;
               return (
-                <div key={time} className="grid grid-cols-[80px_1fr_1fr_1fr_1fr_1fr_1fr_1fr] h-8">
+                <div key={time} className="grid grid-cols-[60px_repeat(7,1fr)] sm:grid-cols-[80px_1fr_1fr_1fr_1fr_1fr_1fr_1fr] h-7 sm:h-8">
                   <div
-                    className={`border-r border-slate-300 pr-3 flex items-start justify-end pt-0.5 ${
+                    className={`border-r border-slate-300 pr-2 sm:pr-3 flex items-start justify-end pt-0.5 ${
                       isHourLine
-                        ? "text-xs text-slate-700 font-semibold"
-                        : "text-[10px] text-slate-400 font-normal"
+                        ? "text-[10px] sm:text-xs text-slate-700 font-semibold"
+                        : "text-[9px] sm:text-[10px] text-slate-400 font-normal"
                     }`}
                   >
                     {time}
@@ -1117,12 +1182,12 @@ export default function App() {
                           `}
                         />
                         {isRangeStart && (
-                          <div className="absolute top-1 left-1 text-[10px] font-semibold text-white drop-shadow-sm pointer-events-none select-none">
+                          <div className="absolute top-1 left-1 text-[9px] sm:text-[10px] font-semibold text-white drop-shadow-sm pointer-events-none select-none">
                             {getSlotStartTime(slotIndex)}
                           </div>
                         )}
                         {isRangeEnd && (
-                          <div className="absolute bottom-1 right-1 text-[10px] font-semibold text-white drop-shadow-sm pointer-events-none select-none">
+                          <div className="absolute bottom-1 right-1 text-[9px] sm:text-[10px] font-semibold text-white drop-shadow-sm pointer-events-none select-none">
                             {getSlotEndTime(slotIndex)}
                           </div>
                         )}
@@ -1132,6 +1197,7 @@ export default function App() {
                 </div>
               );
             })}
+            </div>
           </div>
         </div>
       </main>
@@ -1181,16 +1247,16 @@ export default function App() {
         </div>
       )}
 
-      {isMonthlyModalOpen && (
+      {isExportModalOpen && (
         <div className="fixed inset-0 bg-black/40 backdrop-blur-sm flex items-center justify-center z-50 px-4">
           <div className="bg-white rounded-2xl shadow-xl border border-slate-200 w-full max-w-md p-6 relative">
             <div className="flex items-start justify-between mb-4">
               <div>
-                <h2 className="text-lg font-bold text-slate-800">Feuilles du mois</h2>
-                <p className="text-sm text-slate-500">Exporter toutes tes feuilles pour un mois.</p>
+                <h2 className="text-lg font-bold text-slate-800">Exporter des feuilles</h2>
+                <p className="text-sm text-slate-500">Choisis une période et envoie le PDF.</p>
               </div>
               <button
-                onClick={() => setIsMonthlyModalOpen(false)}
+                onClick={() => setIsExportModalOpen(false)}
                 className="p-2 text-slate-400 hover:text-slate-600 hover:bg-slate-100 rounded-lg"
               >
                 ×
@@ -1199,50 +1265,100 @@ export default function App() {
 
             <div className="space-y-4">
               <div>
-                <label className="block text-sm font-medium text-slate-700 mb-2">Mois</label>
-                <input
-                  type="month"
-                  value={selectedExportMonth}
-                  onChange={(e) => setSelectedExportMonth(e.target.value)}
+                <label className="block text-sm font-medium text-slate-700 mb-2">Période</label>
+                <select
+                  value={exportPeriod}
+                  onChange={(e) => setExportPeriod(e.target.value as 'month' | 'week' | 'custom')}
                   className="w-full px-3 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 outline-none"
-                />
+                >
+                  <option value="month">Mois</option>
+                  <option value="week">Semaine</option>
+                  <option value="custom">Période personnalisée</option>
+                </select>
               </div>
+
+              {exportPeriod === 'month' && (
+                <div>
+                  <label className="block text-sm font-medium text-slate-700 mb-2">Mois</label>
+                  <input
+                    type="month"
+                    value={selectedExportMonth}
+                    onChange={(e) => setSelectedExportMonth(e.target.value)}
+                    className="w-full px-3 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 outline-none"
+                  />
+                </div>
+              )}
+
+              {exportPeriod === 'week' && (
+                <div>
+                  <label className="block text-sm font-medium text-slate-700 mb-2">Semaine (date du lundi)</label>
+                  <input
+                    type="date"
+                    value={selectedExportWeek}
+                    onChange={(e) => setSelectedExportWeek(e.target.value)}
+                    className="w-full px-3 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 outline-none"
+                  />
+                </div>
+              )}
+
+              {exportPeriod === 'custom' && (
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                  <div>
+                    <label className="block text-sm font-medium text-slate-700 mb-2">Date début</label>
+                    <input
+                      type="date"
+                      value={exportStartDate}
+                      onChange={(e) => setExportStartDate(e.target.value)}
+                      className="w-full px-3 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 outline-none"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-slate-700 mb-2">Date fin</label>
+                    <input
+                      type="date"
+                      value={exportEndDate}
+                      onChange={(e) => setExportEndDate(e.target.value)}
+                      className="w-full px-3 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 outline-none"
+                    />
+                  </div>
+                </div>
+              )}
 
               <div>
                 <label className="block text-sm font-medium text-slate-700 mb-2">Email destinataire</label>
                 <input
                   type="email"
-                  value={monthlyRecipient}
-                  onChange={(e) => setMonthlyRecipient(e.target.value)}
+                  value={exportRecipient}
+                  onChange={(e) => setExportRecipient(e.target.value)}
                   className="w-full px-3 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 outline-none"
                   placeholder="rh@entreprise.com"
                 />
               </div>
             </div>
 
-            {monthlyError && <p className="text-xs text-red-600 mt-2">{monthlyError}</p>}
+            {exportError && <p className="text-xs text-red-600 mt-2">{exportError}</p>}
 
             <p className="text-xs text-slate-500 mt-3">
-              Le PDF sera téléchargé puis Outlook s’ouvrira avec un message prérempli.
+              Le PDF sera téléchargé puis Outlook s’ouvrira avec un message prérempli. Pense à joindre le PDF.
             </p>
 
             <div className="flex justify-end gap-2 mt-6">
               <button
-                onClick={() => setIsMonthlyModalOpen(false)}
+                onClick={() => setIsExportModalOpen(false)}
                 className="px-4 py-2 text-slate-600 hover:text-slate-800 rounded-lg border border-slate-200 hover:bg-slate-50 transition-colors"
               >
                 Annuler
               </button>
               <button
-                onClick={handleMonthlyDownload}
-                disabled={monthlyExporting}
+                onClick={handlePeriodDownload}
+                disabled={exportingPeriod}
                 className="px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg font-semibold shadow-sm transition-all disabled:opacity-60 disabled:cursor-not-allowed"
               >
-                {monthlyExporting ? 'Préparation...' : 'PDF du mois'}
+                {exportingPeriod ? 'Préparation...' : 'Télécharger PDF'}
               </button>
               <button
-                onClick={handleMonthlyEmail}
-                disabled={monthlyExporting}
+                onClick={handlePeriodEmail}
+                disabled={exportingPeriod}
                 className="px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg font-semibold shadow-sm transition-all disabled:opacity-60 disabled:cursor-not-allowed flex items-center gap-2"
               >
                 <Mail size={16} /> Outlook
