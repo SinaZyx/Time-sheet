@@ -276,3 +276,110 @@ export function generateConsolidatedPDF(timesheets: TimesheetData[]): void {
     const date = new Date().toISOString().slice(0, 10);
     doc.save(`releves_heures_${timesheets.length}_employes_${date}.pdf`);
 }
+
+/**
+ * Génère un PDF multi-semaines pour un seul employé (retourne le Blob)
+ */
+export function generateEmployeeMonthlyPDF(timesheets: TimesheetData[]): Blob {
+    const doc = new jsPDF("l", "mm", "a4");
+    const pageWidth = doc.internal.pageSize.getWidth();
+
+    timesheets.forEach((data, index) => {
+        if (index > 0) {
+            doc.addPage();
+        }
+
+        const { employeeName, weekStartDate, gridData } = data;
+        const weekDates = getWeekDates(weekStartDate);
+
+        // Header
+        doc.setFillColor(2, 132, 199);
+        doc.rect(0, 0, 297, 25, "F");
+
+        doc.setTextColor(255, 255, 255);
+        doc.setFontSize(22);
+        doc.setFont("helvetica", "bold");
+        doc.text("FEUILLE DE TEMPS HEBDOMADAIRE", 15, 17);
+
+        doc.setFontSize(12);
+        doc.setFont("helvetica", "normal");
+        const weekEndDate = weekDates[6];
+        const weekStr = `${weekStartDate.toLocaleDateString("fr-FR")} - ${weekEndDate.toLocaleDateString("fr-FR")}`;
+        doc.text(`Semaine du : ${weekStr}`, 280, 17, { align: "right" });
+
+        doc.setTextColor(50, 50, 50);
+        doc.setFontSize(11);
+        doc.text(`Collaborateur : ${employeeName}`, 15, 35, { align: "left" });
+
+        // Table
+        const tableBody = weekDates.map((date, i) => [
+            DAYS[i],
+            date.toLocaleDateString("fr-FR"),
+            getRangesText(gridData[i]),
+            `${getDayHours(gridData[i]).toFixed(2)} h`,
+        ]);
+
+        autoTable(doc, {
+            startY: 45,
+            head: [["Jour", "Date", "Horaires (Debut - Fin)", "Total"]],
+            body: tableBody,
+            theme: "striped",
+            headStyles: { fillColor: [2, 132, 199], textColor: 255, fontStyle: "bold", fontSize: 8 },
+            styles: { fontSize: 8, cellPadding: 2 },
+            columnStyles: {
+                0: { fontStyle: "bold", cellWidth: 30 },
+                1: { cellWidth: 30 },
+                2: { cellWidth: "auto" },
+                3: { fontStyle: "bold", halign: "center", cellWidth: 30 },
+            },
+            alternateRowStyles: { fillColor: [240, 249, 255] },
+        });
+
+        const finalY = (doc as any).lastAutoTable.finalY ?? 120;
+        const totalH = calculateHours(gridData);
+        const totalOT = calculateOvertime(gridData);
+
+        const pageHeight = doc.internal.pageSize.getHeight();
+        const blockHeight = 70;
+        let boxY = finalY + 8;
+
+        if (boxY + blockHeight > pageHeight) {
+            boxY = Math.max(30, pageHeight - blockHeight - 10);
+        }
+
+        let sigY = boxY + 50;
+        if (sigY + 12 > pageHeight) {
+            sigY = pageHeight - 20;
+        }
+
+        doc.setDrawColor(2, 132, 199);
+        doc.setLineWidth(0.5);
+        doc.setFillColor(240, 249, 255);
+        const boxWidth = 90;
+        const boxX = pageWidth - boxWidth - 15;
+        doc.roundedRect(boxX, boxY, boxWidth, 26, 3, 3, "FD");
+
+        doc.setFontSize(11);
+        doc.setTextColor(2, 132, 199);
+        doc.text("TOTAL SEMAINE", boxX + boxWidth / 2, boxY + 7, { align: "center" });
+
+        doc.setFontSize(16);
+        doc.setTextColor(15, 23, 42);
+        doc.setFont("helvetica", "bold");
+        doc.text(`${totalH.toFixed(2)} Heures`, boxX + boxWidth / 2, boxY + 16, { align: "center" });
+
+        if (totalOT > 0) {
+            doc.setFontSize(10);
+            doc.setTextColor(217, 119, 6);
+            doc.text(`Dont ${totalOT.toFixed(2)}h sup.`, boxX + boxWidth / 2, boxY + 22, { align: "center" });
+        }
+
+        doc.setFontSize(10);
+        doc.setTextColor(100, 100, 100);
+        doc.setFont("helvetica", "italic");
+        doc.text("Signature Salarie", 20, sigY);
+        doc.text("Signature Responsable", 200, sigY);
+    });
+
+    return doc.output("blob");
+}

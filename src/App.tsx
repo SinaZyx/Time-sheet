@@ -6,11 +6,13 @@ import {
   Clock,
   Download,
   FileSpreadsheet,
+  FileText,
   Trash2,
   User,
   TrendingUp,
   LogOut,
   Loader2,
+  Mail,
   Users,
   LayoutGrid,
 } from "lucide-react";
@@ -19,6 +21,7 @@ import autoTable from "jspdf-autotable";
 import * as XLSX from "xlsx";
 import { Session } from "@supabase/supabase-js";
 import { supabase } from "./lib/supabase";
+import { generateEmployeeMonthlyPDF } from "./utils/pdfExports";
 import Auth from "./components/Auth";
 import EmailNotVerified from "./components/EmailNotVerified";
 import RHDashboard from "./components/RHDashboard";
@@ -28,6 +31,11 @@ const END_HOUR = 23; // 23h00 inclus
 const DAYS = ["Lundi", "Mardi", "Mercredi", "Jeudi", "Vendredi", "Samedi", "Dimanche"];
 const SLOTS_PER_HOUR = 2; // 30 min slots
 const TOTAL_SLOTS = (END_HOUR - START_HOUR + 1) * SLOTS_PER_HOUR;
+
+interface MonthlyTimesheet {
+  week_start_date: string;
+  grid_data: boolean[][];
+}
 
 export default function App() {
   const [grid, setGrid] = useState<boolean[][]>(() =>
@@ -52,6 +60,14 @@ export default function App() {
   const [newName, setNewName] = useState('');
   const [savingName, setSavingName] = useState(false);
   const [nameError, setNameError] = useState<string | null>(null);
+  const [isMonthlyModalOpen, setIsMonthlyModalOpen] = useState(false);
+  const [selectedExportMonth, setSelectedExportMonth] = useState(() => {
+    const now = new Date();
+    return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
+  });
+  const [monthlyRecipient, setMonthlyRecipient] = useState('');
+  const [monthlyExporting, setMonthlyExporting] = useState(false);
+  const [monthlyError, setMonthlyError] = useState<string | null>(null);
 
   const formatMinutes = (totalMinutes: number) => {
     const h = Math.floor(totalMinutes / 60);
@@ -75,13 +91,24 @@ export default function App() {
 
   const monday = useMemo(() => getMonday(currentDate), [currentDate, getMonday]);
 
-  // Convertir monday en string locale (YYYY-MM-DD) sans décalage UTC
-  const mondayStr = useMemo(() => {
-    const year = monday.getFullYear();
-    const month = String(monday.getMonth() + 1).padStart(2, '0');
-    const day = String(monday.getDate()).padStart(2, '0');
+  const formatDateLocal = (date: Date) => {
+    const year = date.getFullYear();
+    const month = String(date.getMonth() + 1).padStart(2, '0');
+    const day = String(date.getDate()).padStart(2, '0');
     return `${year}-${month}-${day}`;
-  }, [monday]);
+  };
+
+  const getMonthLabel = (monthValue: string) => {
+    const [year, month] = monthValue.split('-').map(Number);
+    if (!year || !month) return monthValue;
+    return new Date(year, month - 1, 1).toLocaleDateString('fr-FR', {
+      month: 'long',
+      year: 'numeric',
+    });
+  };
+
+  // Convertir monday en string locale (YYYY-MM-DD) sans décalage UTC
+  const mondayStr = useMemo(() => formatDateLocal(monday), [monday]);
 
   const clearAuthStorage = () => {
     try {
@@ -460,6 +487,121 @@ export default function App() {
     return Math.max(0, totalHours - 35);
   };
 
+  const openMonthlyModal = () => {
+    const monthValue = `${currentDate.getFullYear()}-${String(currentDate.getMonth() + 1).padStart(2, '0')}`;
+    setSelectedExportMonth(monthValue);
+    setMonthlyRecipient('');
+    setMonthlyError(null);
+    setIsMonthlyModalOpen(true);
+  };
+
+  const downloadBlob = (blob: Blob, filename: string) => {
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = filename;
+    link.click();
+    URL.revokeObjectURL(url);
+  };
+
+  const fetchMonthlyTimesheets = async (): Promise<MonthlyTimesheet[] | null> => {
+    if (!session) return null;
+    if (!selectedExportMonth) {
+      setMonthlyError('Sélectionne un mois.');
+      return null;
+    }
+
+    const [year, month] = selectedExportMonth.split('-').map(Number);
+    if (!year || !month) {
+      setMonthlyError('Mois invalide.');
+      return null;
+    }
+
+    setMonthlyExporting(true);
+    setMonthlyError(null);
+    try {
+      const firstDay = new Date(year, month - 1, 1);
+      const lastDay = new Date(year, month, 0);
+      const start = formatDateLocal(firstDay);
+      const end = formatDateLocal(lastDay);
+
+      const { data, error } = await supabase
+        .from('timesheets')
+        .select('grid_data, week_start_date')
+        .eq('user_id', session.user.id)
+        .gte('week_start_date', start)
+        .lte('week_start_date', end)
+        .order('week_start_date', { ascending: true });
+
+      if (error) throw error;
+      if (!data || data.length === 0) {
+        setMonthlyError('Aucune feuille de temps pour ce mois.');
+        return [];
+      }
+
+      return data as MonthlyTimesheet[];
+    } catch (error) {
+      console.error('Error fetching monthly timesheets:', error);
+      setMonthlyError((error as any)?.message || 'Erreur lors du chargement du mois.');
+      return null;
+    } finally {
+      setMonthlyExporting(false);
+    }
+  };
+
+  const buildMonthlyPdf = async () => {
+    const timesheets = await fetchMonthlyTimesheets();
+    if (!timesheets || timesheets.length === 0) return null;
+
+    const employeeName = collabName || session?.user?.email?.split('@')[0] || 'Collaborateur';
+    const pdfData = timesheets.map((ts) => ({
+      employeeName,
+      weekStartDate: new Date(ts.week_start_date),
+      gridData: ts.grid_data,
+    }));
+
+    const blob = generateEmployeeMonthlyPDF(pdfData);
+    const safeName = employeeName.replace(/\s+/g, '_');
+    const filename = `releve_heures_${safeName}_${selectedExportMonth}.pdf`;
+    const monthLabel = getMonthLabel(selectedExportMonth);
+
+    return { blob, filename, monthLabel, employeeName };
+  };
+
+  const handleMonthlyDownload = async () => {
+    const result = await buildMonthlyPdf();
+    if (!result) return;
+    downloadBlob(result.blob, result.filename);
+  };
+
+  const handleMonthlyEmail = async () => {
+    const recipient = monthlyRecipient.trim();
+    if (!recipient) {
+      setMonthlyError('Renseigne l’email du destinataire.');
+      return;
+    }
+
+    const result = await buildMonthlyPdf();
+    if (!result) return;
+
+    downloadBlob(result.blob, result.filename);
+
+    const subject = `Feuille de temps - ${result.employeeName} - ${result.monthLabel}`;
+    const body = [
+      'Bonjour,',
+      '',
+      `Veuillez trouver ci-joint ma feuille de temps pour ${result.monthLabel}.`,
+      '',
+      'Cordialement,',
+      result.employeeName,
+      '',
+      '(Pensez à joindre le PDF téléchargé)',
+    ].join('\n');
+    const mailto = `mailto:${encodeURIComponent(recipient)}?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`;
+
+    window.location.href = mailto;
+  };
+
   const openNameModal = () => {
     setNewName(collabName);
     setNameError(null);
@@ -794,6 +936,13 @@ export default function App() {
                 <FileSpreadsheet size={16} /> Excel
               </button>
               <button
+                onClick={openMonthlyModal}
+                className="flex items-center gap-2 px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg font-medium text-sm shadow-md shadow-indigo-200 transition-all active:scale-95"
+                title="Exporter toutes les feuilles du mois"
+              >
+                <FileText size={16} /> Mois
+              </button>
+              <button
                 onClick={exportPDF}
                 className="flex items-center gap-2 px-4 py-2 bg-sky-600 hover:bg-sky-700 text-white rounded-lg font-medium text-sm shadow-md shadow-sky-200 transition-all active:scale-95"
               >
@@ -1026,6 +1175,77 @@ export default function App() {
                 className="px-4 py-2 bg-sky-600 hover:bg-sky-700 text-white rounded-lg font-semibold shadow-sm transition-all disabled:opacity-60 disabled:cursor-not-allowed"
               >
                 {savingName ? 'Enregistrement...' : 'Enregistrer'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {isMonthlyModalOpen && (
+        <div className="fixed inset-0 bg-black/40 backdrop-blur-sm flex items-center justify-center z-50 px-4">
+          <div className="bg-white rounded-2xl shadow-xl border border-slate-200 w-full max-w-md p-6 relative">
+            <div className="flex items-start justify-between mb-4">
+              <div>
+                <h2 className="text-lg font-bold text-slate-800">Feuilles du mois</h2>
+                <p className="text-sm text-slate-500">Exporter toutes tes feuilles pour un mois.</p>
+              </div>
+              <button
+                onClick={() => setIsMonthlyModalOpen(false)}
+                className="p-2 text-slate-400 hover:text-slate-600 hover:bg-slate-100 rounded-lg"
+              >
+                ×
+              </button>
+            </div>
+
+            <div className="space-y-4">
+              <div>
+                <label className="block text-sm font-medium text-slate-700 mb-2">Mois</label>
+                <input
+                  type="month"
+                  value={selectedExportMonth}
+                  onChange={(e) => setSelectedExportMonth(e.target.value)}
+                  className="w-full px-3 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 outline-none"
+                />
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-slate-700 mb-2">Email destinataire</label>
+                <input
+                  type="email"
+                  value={monthlyRecipient}
+                  onChange={(e) => setMonthlyRecipient(e.target.value)}
+                  className="w-full px-3 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 outline-none"
+                  placeholder="rh@entreprise.com"
+                />
+              </div>
+            </div>
+
+            {monthlyError && <p className="text-xs text-red-600 mt-2">{monthlyError}</p>}
+
+            <p className="text-xs text-slate-500 mt-3">
+              Le PDF sera téléchargé puis Outlook s’ouvrira avec un message prérempli.
+            </p>
+
+            <div className="flex justify-end gap-2 mt-6">
+              <button
+                onClick={() => setIsMonthlyModalOpen(false)}
+                className="px-4 py-2 text-slate-600 hover:text-slate-800 rounded-lg border border-slate-200 hover:bg-slate-50 transition-colors"
+              >
+                Annuler
+              </button>
+              <button
+                onClick={handleMonthlyDownload}
+                disabled={monthlyExporting}
+                className="px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg font-semibold shadow-sm transition-all disabled:opacity-60 disabled:cursor-not-allowed"
+              >
+                {monthlyExporting ? 'Préparation...' : 'PDF du mois'}
+              </button>
+              <button
+                onClick={handleMonthlyEmail}
+                disabled={monthlyExporting}
+                className="px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg font-semibold shadow-sm transition-all disabled:opacity-60 disabled:cursor-not-allowed flex items-center gap-2"
+              >
+                <Mail size={16} /> Outlook
               </button>
             </div>
           </div>
