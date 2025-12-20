@@ -92,78 +92,96 @@ export default function Header({
                         </div>
                     </div>
 
-                    <div className="flex items-center gap-2 flex-wrap justify-start md:justify-end w-full md:w-auto">
+                    <div className="flex items-center gap-2 flex-wrap justify-between sm:justify-end w-full md:w-auto">
                         {dataLoading && <Loader2 className="animate-spin text-sky-600 mr-2" size={20} />}
-                        <div className="flex items-center gap-3 bg-slate-100 p-2 rounded-lg border border-slate-200 w-full sm:w-auto">
-                            <User size={18} className="text-slate-400 ml-2" />
-                            <div className="flex flex-col">
-                                <span className="text-[11px] uppercase tracking-wide text-slate-500 font-semibold">
+
+                        {/* User Block: Full width on very small screens, auto on larger */}
+                        <div className="flex items-center gap-2 sm:gap-3 bg-slate-100 p-1.5 sm:p-2 rounded-lg border border-slate-200 w-full sm:w-auto mb-2 sm:mb-0">
+                            <User size={18} className="text-slate-400 ml-1 sm:ml-2" />
+                            <div className="flex flex-col flex-1 sm:flex-none">
+                                <span className="text-[10px] sm:text-[11px] uppercase tracking-wide text-slate-500 font-semibold">
                                     Nom & prenom
                                 </span>
                                 <input
                                     type="text"
                                     value={collabName}
                                     onChange={(e) => setCollabName(e.target.value)}
-                                    className="bg-transparent border-none outline-none text-sm font-medium w-32 sm:w-48 text-slate-700 placeholder:text-slate-400"
+                                    className="bg-transparent border-none outline-none text-sm font-medium w-full sm:w-48 text-slate-700 placeholder:text-slate-400"
                                     placeholder="Nom Prénom"
                                 />
                             </div>
                             <button
                                 onClick={openNameModal}
-                                className="ml-2 text-xs text-sky-600 hover:text-sky-700 font-semibold px-2 py-1 bg-sky-50 rounded-md border border-sky-100 hover:bg-sky-100 transition-colors"
+                                className="ml-1 sm:ml-2 text-[10px] sm:text-xs text-sky-600 hover:text-sky-700 font-semibold px-2 py-1 bg-sky-50 rounded-md border border-sky-100 hover:bg-sky-100 transition-colors whitespace-nowrap"
                                 title="Modifier le nom/prénom associé"
                             >
                                 Corriger
                             </button>
                         </div>
 
-                        <button
-                            onClick={clearGrid}
-                            className="p-2 text-red-500 hover:bg-red-50 rounded-lg transition-colors"
-                            title="Tout effacer"
-                        >
-                            <Trash2 size={20} />
-                        </button>
-                        <div className="h-6 w-px bg-slate-300 mx-1" />
-                        <button
-                            onClick={exportExcel}
-                            className="flex items-center gap-2 px-3 sm:px-4 py-2 bg-white border border-slate-300 hover:bg-slate-50 text-slate-700 rounded-lg font-medium text-xs sm:text-sm transition-all"
-                        >
-                            <FileSpreadsheet size={16} /> Excel
-                        </button>
-                        <button
-                            onClick={openExportModal}
-                            className="flex items-center gap-2 px-3 sm:px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg font-medium text-xs sm:text-sm shadow-md shadow-indigo-200 transition-all active:scale-95"
-                            title="Exporter les feuilles de temps"
-                        >
-                            <FileText size={16} /> Feuilles
-                        </button>
-                        <button
-                            onClick={exportPDF}
-                            className="flex items-center gap-2 px-3 sm:px-4 py-2 bg-sky-600 hover:bg-sky-700 text-white rounded-lg font-medium text-xs sm:text-sm shadow-md shadow-sky-200 transition-all active:scale-95"
-                        >
-                            <Download size={16} /> PDF
-                        </button>
-                        {userRole === 'admin' && (
-                            <>
-                                <div className="h-6 w-px bg-slate-300 mx-1" />
-                                <button
-                                    onClick={() => setViewMode('rh')}
-                                    className="flex items-center gap-2 px-3 sm:px-4 py-2 bg-purple-600 hover:bg-purple-700 text-white rounded-lg font-medium text-xs sm:text-sm transition-all"
-                                    title="Tableau de bord RH"
-                                >
-                                    <Users size={16} /> RH
-                                </button>
-                            </>
-                        )}
-                        <div className="h-6 w-px bg-slate-300 mx-1" />
-                        <button
-                            onClick={onSignOut}
-                            className="p-2 text-slate-500 hover:bg-slate-100 rounded-lg transition-colors"
-                            title="Se déconnecter"
-                        >
-                            <LogOut size={20} />
-                        </button>
+                        {/* Actions Group - using a container to keep them together if needed */}
+                        <div className="flex items-center gap-2 flex-wrap justify-end w-full sm:w-auto">
+                            <button
+                                onClick={clearGrid}
+                                className="p-2 text-red-500 hover:bg-red-50 rounded-lg transition-colors border border-transparent hover:border-red-100"
+                                title="Tout effacer"
+                            >
+                                <Trash2 size={20} />
+                            </button>
+
+                            <div className="h-6 w-px bg-slate-300 mx-1 hidden sm:block" />
+
+                            <button
+                                onClick={exportExcel}
+                                className="flex items-center gap-2 px-2 sm:px-4 py-2 bg-white border border-slate-300 hover:bg-slate-50 text-slate-700 rounded-lg font-medium text-xs sm:text-sm transition-all"
+                                title="Exporter Excel"
+                            >
+                                <FileSpreadsheet size={18} className="sm:w-4 sm:h-4" />
+                                <span className="hidden sm:inline">Excel</span>
+                            </button>
+
+                            <button
+                                onClick={openExportModal}
+                                className="flex items-center gap-2 px-2 sm:px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg font-medium text-xs sm:text-sm shadow-md shadow-indigo-200 transition-all active:scale-95"
+                                title="Exporter les feuilles de temps"
+                            >
+                                <FileText size={18} className="sm:w-4 sm:h-4" />
+                                <span className="hidden sm:inline">Feuilles</span>
+                            </button>
+
+                            <button
+                                onClick={exportPDF}
+                                className="flex items-center gap-2 px-2 sm:px-4 py-2 bg-sky-600 hover:bg-sky-700 text-white rounded-lg font-medium text-xs sm:text-sm shadow-md shadow-sky-200 transition-all active:scale-95"
+                                title="Télécharger PDF"
+                            >
+                                <Download size={18} className="sm:w-4 sm:h-4" />
+                                <span className="hidden sm:inline">PDF</span>
+                            </button>
+
+                            {userRole === 'admin' && (
+                                <>
+                                    <div className="h-6 w-px bg-slate-300 mx-1 hidden sm:block" />
+                                    <button
+                                        onClick={() => setViewMode('rh')}
+                                        className="flex items-center gap-2 px-2 sm:px-4 py-2 bg-purple-600 hover:bg-purple-700 text-white rounded-lg font-medium text-xs sm:text-sm transition-all"
+                                        title="Tableau de bord RH"
+                                    >
+                                        <Users size={18} className="sm:w-4 sm:h-4" />
+                                        <span className="hidden sm:inline">RH</span>
+                                    </button>
+                                </>
+                            )}
+
+                            <div className="h-6 w-px bg-slate-300 mx-1 hidden sm:block" />
+
+                            <button
+                                onClick={onSignOut}
+                                className="p-2 text-slate-500 hover:bg-slate-100 rounded-lg transition-colors border border-transparent hover:border-slate-200"
+                                title="Se déconnecter"
+                            >
+                                <LogOut size={20} />
+                            </button>
+                        </div>
                     </div>
                 </div>
             </div>
