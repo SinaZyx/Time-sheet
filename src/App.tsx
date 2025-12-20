@@ -1,20 +1,8 @@
 import React, { useState, useEffect, useCallback, useMemo } from "react";
 import {
-  Calendar,
-  ChevronLeft,
-  ChevronRight,
-  Clock,
-  Download,
-  FileSpreadsheet,
-  FileText,
-  Trash2,
-  User,
-  TrendingUp,
-  LogOut,
   Loader2,
-  Mail,
-  Users,
   LayoutGrid,
+  LogOut,
 } from "lucide-react";
 import { jsPDF } from "jspdf";
 import autoTable from "jspdf-autotable";
@@ -25,6 +13,13 @@ import { generateEmployeeMonthlyPDF } from "./utils/pdfExports";
 import Auth from "./components/Auth";
 import EmailNotVerified from "./components/EmailNotVerified";
 import RHDashboard from "./components/RHDashboard";
+
+import Header from "./components/Header";
+import StatsCards from "./components/StatsCards";
+import Legend from "./components/Legend";
+import TimesheetGrid from "./components/TimesheetGrid";
+import NameModal from "./components/modals/NameModal";
+import ExportModal from "./components/modals/ExportModal";
 
 const START_HOUR = 6;
 const END_HOUR = 23; // 23h00 inclus
@@ -127,20 +122,6 @@ export default function App() {
       console.error('Erreur lors du nettoyage du stockage auth:', error);
     }
   };
-
-  const handleEmergencySignOut = useCallback(async () => {
-    try {
-      await supabase.auth.signOut();
-    } catch (error) {
-      console.error('Erreur lors du reset session:', error);
-    } finally {
-      clearAuthStorage();
-      setSession(null);       // retourne sur l'écran Auth sans recharger la page
-      setAuthLoading(false);
-      setShowResetButton(false);
-      window.location.reload();
-    }
-  }, []);
 
   const weekDates = useMemo(() =>
     Array.from({ length: 7 }, (_, i) => {
@@ -283,12 +264,14 @@ export default function App() {
           // Charger le rôle de manière asynchrone SANS bloquer authLoading
           // Cela évite que la requête profile bloque le chargement des données
           console.log('[onAuthStateChange] Fetching user role asynchronously...');
-          supabase
-            .from('profiles')
-            .select('role')
-            .eq('id', newSession.user.id)
-            .single()
-            .then(({ data: profile, error }) => {
+          const fetchRole = async () => {
+            try {
+              const { data: profile, error } = await supabase
+                .from('profiles')
+                .select('role')
+                .eq('id', newSession.user.id)
+                .single();
+
               if (error) {
                 console.error('[onAuthStateChange] Error fetching profile:', error);
                 setLoadError(error.message);
@@ -296,10 +279,11 @@ export default function App() {
                 console.log('[onAuthStateChange] User role:', profile?.role || 'employee');
                 setUserRole(profile?.role || 'employee');
               }
-            })
-            .catch((error) => {
-              console.error('[onAuthStateChange] Profile fetch failed:', error);
-            });
+            } catch (err: any) {
+              console.error('[onAuthStateChange] Profile fetch failed:', err);
+            }
+          };
+          fetchRole();
         }
       } catch (error) {
         console.error('[onAuthStateChange] Error:', error);
@@ -360,7 +344,7 @@ export default function App() {
         hasData: !!data,
         error: error?.message || null,
         errorCode: error?.code || null,
-        gridDays: data?.grid_data?.length || 0
+        gridDays: (data?.grid_data as any)?.length || 0
       });
 
       if (error && error.code !== 'PGRST116') {
@@ -369,8 +353,8 @@ export default function App() {
       }
 
       if (data) {
-        console.log('[fetchWeekData] ✅ Found data, grid has', data.grid_data?.length, 'days');
-        setGrid(data.grid_data);
+        console.log('[fetchWeekData] ✅ Found data, grid has', (data.grid_data as any)?.length, 'days');
+        setGrid(data.grid_data as boolean[][]);
       } else {
         console.log('[fetchWeekData] ⚠️ No data found for this week (PGRST116), creating empty grid');
         setGrid(Array(7).fill(null).map(() => Array(TOTAL_SLOTS).fill(false)));
@@ -399,9 +383,9 @@ export default function App() {
         .upsert({
           user_id: session.user.id,
           week_start_date: mondayStr,
-          grid_data: currentGrid,
+          grid_data: currentGrid as any,
           updated_at: new Date().toISOString(),
-        }, { onConflict: 'user_id,week_start_date' });
+        } as any, { onConflict: 'user_id,week_start_date' });
 
       if (error) throw error;
     } catch (error) {
@@ -922,120 +906,25 @@ export default function App() {
       className="min-h-screen bg-slate-50 text-slate-900 font-sans selection:bg-sky-200"
       onMouseUp={handleMouseUp}
     >
-      <header className="bg-white border-b border-slate-200 sticky top-0 z-20 shadow-sm">
-        <div className="max-w-7xl mx-auto px-4 py-4">
-          <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
-            <div className="flex items-center gap-3">
-              <div className="bg-sky-600 p-2 rounded-lg text-white shadow-lg shadow-sky-200">
-                <Calendar size={24} />
-              </div>
-              <div>
-                <h1 className="text-xl font-bold text-slate-800">Planning Hebdomadaire</h1>
-                <div className="flex items-center gap-2 mt-1 flex-wrap">
-                  <button
-                    onClick={() => changeWeek(-1)}
-                    className="p-0.5 hover:bg-slate-100 rounded-full text-slate-400 hover:text-sky-600 transition-colors"
-                    title="Semaine precedente"
-                  >
-                    <ChevronLeft size={18} />
-                  </button>
-                  <span className="text-xs sm:text-sm text-slate-500 font-medium capitalize min-w-[140px] sm:min-w-[180px] text-center select-none">
-                    {monday.toLocaleDateString("fr-FR", { day: "numeric", month: "long" })} -{" "}
-                    {weekDates[6].toLocaleDateString("fr-FR", { day: "numeric", month: "long", year: "numeric" })}
-                  </span>
-                  <button
-                    onClick={() => changeWeek(1)}
-                    className="p-0.5 hover:bg-slate-100 rounded-full text-slate-400 hover:text-sky-600 transition-colors"
-                    title="Semaine suivante"
-                  >
-                    <ChevronRight size={18} />
-                  </button>
-                  <button
-                    onClick={() => setCurrentDate(new Date())}
-                    className="text-xs text-sky-600 hover:text-sky-700 font-medium ml-0 sm:ml-2 px-2 py-0.5 bg-sky-50 rounded hover:bg-sky-100 transition-colors"
-                  >
-                    Aujourd'hui
-                  </button>
-                </div>
-              </div>
-            </div>
-
-            <div className="flex items-center gap-2 flex-wrap justify-start md:justify-end w-full md:w-auto">
-              {dataLoading && <Loader2 className="animate-spin text-sky-600 mr-2" size={20} />}
-              <div className="flex items-center gap-3 bg-slate-100 p-2 rounded-lg border border-slate-200 w-full sm:w-auto">
-                <User size={18} className="text-slate-400 ml-2" />
-                <div className="flex flex-col">
-                  <span className="text-[11px] uppercase tracking-wide text-slate-500 font-semibold">
-                    Nom & prenom
-                  </span>
-                  <input
-                    type="text"
-                    value={collabName}
-                    onChange={(e) => setCollabName(e.target.value)}
-                    className="bg-transparent border-none outline-none text-sm font-medium w-32 sm:w-48 text-slate-700 placeholder:text-slate-400"
-                    placeholder="Nom Prénom"
-                  />
-                </div>
-                <button
-                  onClick={openNameModal}
-                  className="ml-2 text-xs text-sky-600 hover:text-sky-700 font-semibold px-2 py-1 bg-sky-50 rounded-md border border-sky-100 hover:bg-sky-100 transition-colors"
-                  title="Modifier le nom/prénom associé"
-                >
-                  Corriger
-                </button>
-              </div>
-
-              <button
-                onClick={clearGrid}
-                className="p-2 text-red-500 hover:bg-red-50 rounded-lg transition-colors"
-                title="Tout effacer"
-              >
-                <Trash2 size={20} />
-              </button>
-              <div className="h-6 w-px bg-slate-300 mx-1" />
-              <button
-                onClick={exportExcel}
-                className="flex items-center gap-2 px-3 sm:px-4 py-2 bg-white border border-slate-300 hover:bg-slate-50 text-slate-700 rounded-lg font-medium text-xs sm:text-sm transition-all"
-              >
-                <FileSpreadsheet size={16} /> Excel
-              </button>
-              <button
-                onClick={openExportModal}
-                className="flex items-center gap-2 px-3 sm:px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg font-medium text-xs sm:text-sm shadow-md shadow-indigo-200 transition-all active:scale-95"
-                title="Exporter les feuilles de temps"
-              >
-                <FileText size={16} /> Feuilles
-              </button>
-              <button
-                onClick={exportPDF}
-                className="flex items-center gap-2 px-3 sm:px-4 py-2 bg-sky-600 hover:bg-sky-700 text-white rounded-lg font-medium text-xs sm:text-sm shadow-md shadow-sky-200 transition-all active:scale-95"
-              >
-                <Download size={16} /> PDF
-              </button>
-              {userRole === 'admin' && (
-                <>
-                  <div className="h-6 w-px bg-slate-300 mx-1" />
-                  <button
-                    onClick={() => setViewMode('rh')}
-                    className="flex items-center gap-2 px-3 sm:px-4 py-2 bg-purple-600 hover:bg-purple-700 text-white rounded-lg font-medium text-xs sm:text-sm transition-all"
-                    title="Tableau de bord RH"
-                  >
-                    <Users size={16} /> RH
-                  </button>
-                </>
-              )}
-              <div className="h-6 w-px bg-slate-300 mx-1" />
-              <button
-                onClick={() => supabase.auth.signOut()}
-                className="p-2 text-slate-500 hover:bg-slate-100 rounded-lg transition-colors"
-                title="Se déconnecter"
-              >
-                <LogOut size={20} />
-              </button>
-            </div>
-          </div>
-        </div>
-      </header>
+      <Header
+        currentDate={currentDate}
+        weekDates={weekDates}
+        changeWeek={changeWeek}
+        setCurrentDate={setCurrentDate}
+        monday={monday}
+        collabName={collabName}
+        setCollabName={setCollabName}
+        openNameModal={openNameModal}
+        clearGrid={clearGrid}
+        exportExcel={exportExcel}
+        openExportModal={openExportModal}
+        exportPDF={exportPDF}
+        viewMode={viewMode}
+        setViewMode={setViewMode}
+        userRole={userRole}
+        onSignOut={() => supabase.auth.signOut()}
+        dataLoading={dataLoading}
+      />
 
       {verificationMessage && (
         <div className="max-w-7xl mx-auto px-4 pt-4">
@@ -1061,312 +950,56 @@ export default function App() {
         )}
 
         <div className="grid grid-cols-1 md:grid-cols-4 gap-6 mb-8">
-          <div className="bg-white p-5 rounded-2xl border border-slate-200 shadow-sm flex items-center justify-between">
-            <div>
-              <p className="text-sm font-medium text-slate-500 mb-1">Total Heures</p>
-              <p className="text-3xl font-bold text-sky-600">
-                {calculateHours().toFixed(2)} <span className="text-lg text-slate-400 font-normal">h</span>
-              </p>
-            </div>
-            <div className="bg-sky-50 p-3 rounded-full text-sky-600">
-              <Clock size={24} />
-            </div>
-          </div>
-
-          <div className="bg-white p-5 rounded-2xl border border-slate-200 shadow-sm flex items-center justify-between">
-            <div>
-              <p className="text-sm font-medium text-slate-500 mb-1">Heures Supp. (&gt;7h)</p>
-              <p className="text-3xl font-bold text-amber-500">
-                {calculateOvertime().toFixed(2)} <span className="text-lg text-slate-400 font-normal">h</span>
-              </p>
-            </div>
-            <div className="bg-amber-50 p-3 rounded-full text-amber-500">
-              <TrendingUp size={24} />
-            </div>
-          </div>
-
-          <div className="col-span-2 bg-white p-5 rounded-2xl border border-slate-200 shadow-sm flex items-center gap-6">
-            <div className="flex items-center gap-3">
-              <div className="w-12 h-12 rounded-lg bg-sky-100 border border-sky-300 flex items-center justify-center">
-                <div className="w-6 h-6 rounded bg-sky-500" />
-              </div>
-              <div className="text-sm">
-                <p className="font-bold text-slate-700">Travaille</p>
-                <p className="text-slate-500">Clique et glisse</p>
-              </div>
-            </div>
-            <div className="h-10 w-px bg-slate-100" />
-            <div className="flex items-center gap-3">
-              <div className="w-12 h-12 rounded-lg bg-slate-50 border border-slate-200 flex items-center justify-center">
-                <div className="w-6 h-6 rounded bg-white border border-slate-200" />
-              </div>
-              <div className="text-sm">
-                <p className="font-bold text-slate-700">Repos</p>
-                <p className="text-slate-500">Laisse vide</p>
-              </div>
-            </div>
-            <div className="flex-1 text-right text-sm text-slate-400 italic">
-              Astuce : clique sur une zone bleue pour activer la gomme
-            </div>
-          </div>
+          <StatsCards
+            totalHours={calculateHours()}
+            overtimeHours={calculateOvertime()}
+          />
+          <Legend />
         </div>
 
-        <div className="bg-white rounded-2xl shadow-sm border border-slate-200 overflow-x-auto select-none">
-          <div className="min-w-[900px]">
-            <div className="grid grid-cols-[60px_repeat(7,1fr)] sm:grid-cols-[80px_1fr_1fr_1fr_1fr_1fr_1fr_1fr] border-b border-slate-200">
-            <div className="p-3 sm:p-4 bg-slate-50 border-r border-slate-200" />
-            {DAYS.map((day, i) => {
-              const isToday = weekDates[i].toDateString() === new Date().toDateString();
-              return (
-                <div
-                  key={day}
-                  className={`p-2 sm:p-3 text-center border-r border-slate-100 last:border-r-0 ${isToday ? "bg-sky-50" : "bg-white"
-                    }`}
-                >
-                  <p className={`text-[10px] sm:text-xs font-bold uppercase mb-1 ${isToday ? "text-sky-600" : "text-slate-400"}`}>
-                    {day}
-                  </p>
-                  <div
-                    className={`mx-auto w-7 h-7 sm:w-8 sm:h-8 flex items-center justify-center rounded-full font-bold text-xs sm:text-sm ${isToday ? "bg-sky-600 text-white" : "text-slate-700"
-                      }`}
-                  >
-                    {weekDates[i].getDate()}
-                  </div>
-                </div>
-              );
-            })}
-            </div>
-
-            <div className="relative">
-            {timeLabels.map((time, slotIndex) => {
-              const isHourLine = slotIndex % 2 === 0;
-              return (
-                <div key={time} className="grid grid-cols-[60px_repeat(7,1fr)] sm:grid-cols-[80px_1fr_1fr_1fr_1fr_1fr_1fr_1fr] h-7 sm:h-8">
-                  <div
-                    className={`border-r border-slate-300 pr-2 sm:pr-3 flex items-start justify-end pt-0.5 ${
-                      isHourLine
-                        ? "text-[10px] sm:text-xs text-slate-700 font-semibold"
-                        : "text-[9px] sm:text-[10px] text-slate-400 font-normal"
-                    }`}
-                  >
-                    {time}
-                  </div>
-                  {DAYS.map((_, dayIndex) => {
-                    const isActive = grid[dayIndex][slotIndex];
-                    const prevActive = slotIndex > 0 && grid[dayIndex][slotIndex - 1];
-                    const nextActive = slotIndex < TOTAL_SLOTS - 1 && grid[dayIndex][slotIndex + 1];
-                    const isRangeStart = isActive && !prevActive;
-                    const isRangeEnd = isActive && !nextActive;
-
-                    let roundedClass = "rounded-sm";
-                    if (isActive) {
-                      if (prevActive && nextActive) roundedClass = "";
-                      else if (prevActive) roundedClass = "rounded-b-md";
-                      else if (nextActive) roundedClass = "rounded-t-md";
-                      else roundedClass = "rounded-md";
-                    }
-
-                    return (
-                      <div
-                        key={`${dayIndex}-${slotIndex}`}
-                        onMouseDown={() => handleMouseDown(dayIndex, slotIndex)}
-                        onMouseEnter={() => handleMouseEnter(dayIndex, slotIndex)}
-                        className={`border-r border-slate-300 last:border-r-0 cursor-pointer transition-colors relative ${isHourLine ? "border-b border-slate-300" : "border-b border-slate-200"
-                          } hover:bg-slate-100`}
-                      >
-                        <div
-                          className={`
-                            absolute inset-0.5 transition-all duration-150 pointer-events-none
-                            ${isActive ? "bg-sky-600 shadow-sm" : "bg-transparent"}
-                            ${roundedClass}
-                          `}
-                        />
-                        {isRangeStart && (
-                          <div className="absolute top-1 left-1 text-[9px] sm:text-[10px] font-semibold text-white drop-shadow-sm pointer-events-none select-none">
-                            {getSlotStartTime(slotIndex)}
-                          </div>
-                        )}
-                        {isRangeEnd && (
-                          <div className="absolute bottom-1 right-1 text-[9px] sm:text-[10px] font-semibold text-white drop-shadow-sm pointer-events-none select-none">
-                            {getSlotEndTime(slotIndex)}
-                          </div>
-                        )}
-                      </div>
-                    );
-                  })}
-                </div>
-              );
-            })}
-            </div>
-          </div>
-        </div>
+        <TimesheetGrid
+          grid={grid}
+          weekDates={weekDates}
+          timeLabels={timeLabels}
+          days={DAYS}
+          handleMouseDown={handleMouseDown}
+          handleMouseEnter={handleMouseEnter}
+          getSlotStartTime={getSlotStartTime}
+          getSlotEndTime={getSlotEndTime}
+          totalSlots={TOTAL_SLOTS}
+        />
       </main>
 
-      {isNameModalOpen && (
-        <div className="fixed inset-0 bg-black/40 backdrop-blur-sm flex items-center justify-center z-50 px-4">
-          <div className="bg-white rounded-2xl shadow-xl border border-slate-200 w-full max-w-md p-6 relative">
-            <div className="flex items-start justify-between mb-4">
-              <div>
-                <h2 className="text-lg font-bold text-slate-800">Modifier le nom/prénom</h2>
-                <p className="text-sm text-slate-500">Met à jour le nom associé à ton compte.</p>
-              </div>
-              <button
-                onClick={() => setIsNameModalOpen(false)}
-                className="p-2 text-slate-400 hover:text-slate-600 hover:bg-slate-100 rounded-lg"
-              >
-                ×
-              </button>
-            </div>
+      <NameModal
+        isOpen={isNameModalOpen}
+        onClose={() => setIsNameModalOpen(false)}
+        newName={newName}
+        setNewName={setNewName}
+        saveNameChange={saveNameChange}
+        savingName={savingName}
+        nameError={nameError}
+      />
 
-            <label className="block text-sm font-medium text-slate-700 mb-2">Nom & Prénom</label>
-            <input
-              type="text"
-              value={newName}
-              onChange={(e) => setNewName(e.target.value)}
-              className="w-full px-3 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-sky-500 focus:border-sky-500 outline-none"
-              placeholder="Jean Dupont"
-            />
-            {nameError && <p className="text-xs text-red-600 mt-1">{nameError}</p>}
-
-            <div className="flex justify-end gap-2 mt-6">
-              <button
-                onClick={() => setIsNameModalOpen(false)}
-                className="px-4 py-2 text-slate-600 hover:text-slate-800 rounded-lg border border-slate-200 hover:bg-slate-50 transition-colors"
-              >
-                Annuler
-              </button>
-              <button
-                onClick={saveNameChange}
-                disabled={savingName}
-                className="px-4 py-2 bg-sky-600 hover:bg-sky-700 text-white rounded-lg font-semibold shadow-sm transition-all disabled:opacity-60 disabled:cursor-not-allowed"
-              >
-                {savingName ? 'Enregistrement...' : 'Enregistrer'}
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {isExportModalOpen && (
-        <div className="fixed inset-0 bg-black/40 backdrop-blur-sm flex items-center justify-center z-50 px-4">
-          <div className="bg-white rounded-2xl shadow-xl border border-slate-200 w-full max-w-md p-6 relative">
-            <div className="flex items-start justify-between mb-4">
-              <div>
-                <h2 className="text-lg font-bold text-slate-800">Exporter des feuilles</h2>
-                <p className="text-sm text-slate-500">Choisis une période et envoie le PDF.</p>
-              </div>
-              <button
-                onClick={() => setIsExportModalOpen(false)}
-                className="p-2 text-slate-400 hover:text-slate-600 hover:bg-slate-100 rounded-lg"
-              >
-                ×
-              </button>
-            </div>
-
-            <div className="space-y-4">
-              <div>
-                <label className="block text-sm font-medium text-slate-700 mb-2">Période</label>
-                <select
-                  value={exportPeriod}
-                  onChange={(e) => setExportPeriod(e.target.value as 'month' | 'week' | 'custom')}
-                  className="w-full px-3 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 outline-none"
-                >
-                  <option value="month">Mois</option>
-                  <option value="week">Semaine</option>
-                  <option value="custom">Période personnalisée</option>
-                </select>
-              </div>
-
-              {exportPeriod === 'month' && (
-                <div>
-                  <label className="block text-sm font-medium text-slate-700 mb-2">Mois</label>
-                  <input
-                    type="month"
-                    value={selectedExportMonth}
-                    onChange={(e) => setSelectedExportMonth(e.target.value)}
-                    className="w-full px-3 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 outline-none"
-                  />
-                </div>
-              )}
-
-              {exportPeriod === 'week' && (
-                <div>
-                  <label className="block text-sm font-medium text-slate-700 mb-2">Semaine (date du lundi)</label>
-                  <input
-                    type="date"
-                    value={selectedExportWeek}
-                    onChange={(e) => setSelectedExportWeek(e.target.value)}
-                    className="w-full px-3 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 outline-none"
-                  />
-                </div>
-              )}
-
-              {exportPeriod === 'custom' && (
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                  <div>
-                    <label className="block text-sm font-medium text-slate-700 mb-2">Date début</label>
-                    <input
-                      type="date"
-                      value={exportStartDate}
-                      onChange={(e) => setExportStartDate(e.target.value)}
-                      className="w-full px-3 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 outline-none"
-                    />
-                  </div>
-                  <div>
-                    <label className="block text-sm font-medium text-slate-700 mb-2">Date fin</label>
-                    <input
-                      type="date"
-                      value={exportEndDate}
-                      onChange={(e) => setExportEndDate(e.target.value)}
-                      className="w-full px-3 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 outline-none"
-                    />
-                  </div>
-                </div>
-              )}
-
-              <div>
-                <label className="block text-sm font-medium text-slate-700 mb-2">Email destinataire</label>
-                <input
-                  type="email"
-                  value={exportRecipient}
-                  onChange={(e) => setExportRecipient(e.target.value)}
-                  className="w-full px-3 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 outline-none"
-                  placeholder="rh@entreprise.com"
-                />
-              </div>
-            </div>
-
-            {exportError && <p className="text-xs text-red-600 mt-2">{exportError}</p>}
-
-            <p className="text-xs text-slate-500 mt-3">
-              Le PDF sera téléchargé puis Outlook s’ouvrira avec un message prérempli. Pense à joindre le PDF.
-            </p>
-
-            <div className="flex justify-end gap-2 mt-6">
-              <button
-                onClick={() => setIsExportModalOpen(false)}
-                className="px-4 py-2 text-slate-600 hover:text-slate-800 rounded-lg border border-slate-200 hover:bg-slate-50 transition-colors"
-              >
-                Annuler
-              </button>
-              <button
-                onClick={handlePeriodDownload}
-                disabled={exportingPeriod}
-                className="px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg font-semibold shadow-sm transition-all disabled:opacity-60 disabled:cursor-not-allowed"
-              >
-                {exportingPeriod ? 'Préparation...' : 'Télécharger PDF'}
-              </button>
-              <button
-                onClick={handlePeriodEmail}
-                disabled={exportingPeriod}
-                className="px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg font-semibold shadow-sm transition-all disabled:opacity-60 disabled:cursor-not-allowed flex items-center gap-2"
-              >
-                <Mail size={16} /> Outlook
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
+      <ExportModal
+        isOpen={isExportModalOpen}
+        onClose={() => setIsExportModalOpen(false)}
+        exportPeriod={exportPeriod}
+        setExportPeriod={setExportPeriod}
+        selectedExportMonth={selectedExportMonth}
+        setSelectedExportMonth={setSelectedExportMonth}
+        selectedExportWeek={selectedExportWeek}
+        setSelectedExportWeek={setSelectedExportWeek}
+        exportStartDate={exportStartDate}
+        setExportStartDate={setExportStartDate}
+        exportEndDate={exportEndDate}
+        setExportEndDate={setExportEndDate}
+        exportRecipient={exportRecipient}
+        setExportRecipient={setExportRecipient}
+        exportingPeriod={exportingPeriod}
+        exportError={exportError}
+        handlePeriodDownload={handlePeriodDownload}
+        handlePeriodEmail={handlePeriodEmail}
+      />
     </div >
   );
 }

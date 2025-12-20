@@ -1,6 +1,14 @@
 import { createClient } from '@supabase/supabase-js';
 
 // Types pour la base de données
+export type Json =
+    | string
+    | number
+    | boolean
+    | null
+    | { [key: string]: Json | undefined }
+    | Json[]
+
 export interface Database {
     public: {
         Tables: {
@@ -35,21 +43,21 @@ export interface Database {
                     id: number;
                     user_id: string;
                     week_start_date: string;
-                    grid_data: boolean[][];
+                    grid_data: Json;
                     updated_at: string;
                 };
                 Insert: {
                     id?: number;
                     user_id: string;
                     week_start_date: string;
-                    grid_data: boolean[][];
+                    grid_data: Json;
                     updated_at?: string;
                 };
                 Update: {
                     id?: number;
                     user_id?: string;
                     week_start_date?: string;
-                    grid_data?: boolean[][];
+                    grid_data?: Json;
                     updated_at?: string;
                 };
             };
