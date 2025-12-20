@@ -58,11 +58,11 @@ export default function TimesheetGrid({
                         const isHourLine = slotIndex % 2 === 0;
                         return (
                             <div key={time} className="grid grid-cols-[60px_repeat(7,1fr)] sm:grid-cols-[80px_1fr_1fr_1fr_1fr_1fr_1fr_1fr] h-7 sm:h-8">
-                                {/* Colonne heure */}
+                                {/* Colonne heure (Sticky) */}
                                 <div
-                                    className={`border-r border-slate-300 pr-2 sm:pr-3 flex items-start justify-end pt-0.5 ${isHourLine
-                                        ? "text-[10px] sm:text-xs text-slate-700 font-semibold"
-                                        : "text-[9px] sm:text-[10px] text-slate-400 font-normal"
+                                    className={`sticky left-0 z-10 bg-white/95 backdrop-blur-sm border-r border-slate-300 pr-2 sm:pr-3 flex items-start justify-end pt-0.5 ${isHourLine
+                                        ? "text-[10px] sm:text-xs text-slate-700 font-semibold shadow-[1px_0_3px_-1px_rgba(0,0,0,0.1)]"
+                                        : "text-[9px] sm:text-[10px] text-slate-400 font-normal shadow-[1px_0_3px_-1px_rgba(0,0,0,0.1)]"
                                         }`}
                                 >
                                     {time}
