@@ -52,152 +52,137 @@ function getWeekDates(monday: Date): Date[] {
     });
 }
 
+// Nettoyer le nom de la feuille (max 31 chars, pas de caractères interdits)
+function sanitizeSheetName(name: string): string {
+    return name.replace(/[\[\]\*\/\\\?\:]/g, '_').substring(0, 31);
+}
+
 /**
- * Génère un fichier Excel consolidé avec tous les employés sélectionnés
+ * Génère un fichier Excel consolidé :
+ * 1. Feuille "Récapitulatif" : Liste de toutes les semaines de tous les employés avec totaux.
+ * 2. Une feuille par employé : Détail jour par jour de toutes leurs semaines.
  */
 export function generateConsolidatedExcel(timesheets: TimesheetData[]): void {
     const wb = XLSX.utils.book_new();
 
-    // Feuille 1: Vue détaillée par employé et par jour
-    const detailedData: any[] = [];
+    // --- Feuille 1 : Récapitulatif Global ---
+    const summaryData: any[] = [];
 
-    timesheets.forEach((data) => {
-        const { employeeName, weekStartDate, gridData } = data;
-        const weekDates = getWeekDates(weekStartDate);
-        const weekStr = `${weekStartDate.toLocaleDateString("fr-FR")} - ${weekDates[6].toLocaleDateString("fr-FR")}`;
+    // Trier par nom d'employé puis par date
+    const sortedTimesheets = [...timesheets].sort((a, b) => {
+        const nameCompare = a.employeeName.localeCompare(b.employeeName);
+        if (nameCompare !== 0) return nameCompare;
+        return a.weekStartDate.getTime() - b.weekStartDate.getTime();
+    });
 
-        weekDates.forEach((date, dayIndex) => {
-            const hours = getDayHours(gridData[dayIndex]);
+    sortedTimesheets.forEach(ts => {
+        const weekDates = getWeekDates(ts.weekStartDate);
+        const weekStr = `Semaine du ${ts.weekStartDate.toLocaleDateString("fr-FR")} au ${weekDates[6].toLocaleDateString("fr-FR")}`;
 
-            detailedData.push({
-                "Employé": employeeName,
-                "Semaine": weekStr,
-                "Jour": DAYS[dayIndex],
-                "Date": date.toLocaleDateString("fr-FR"),
-                "Horaires": getRangesText(gridData[dayIndex]),
-                "Heures": hours,
-            });
-        });
-
-        // Ligne de total par employé
-        const totalHours = gridData.flat().filter(Boolean).length * 0.5;
-        // En France : Heures supp = au-delà de 35h par semaine
+        const totalHours = ts.gridData.flat().filter(Boolean).length * 0.5;
         const totalSupp = Math.max(0, totalHours - 35);
+        const normalHours = Math.min(totalHours, 35);
 
-        detailedData.push({
-            "Employé": `TOTAL ${employeeName}`,
-            "Semaine": "",
-            "Jour": "",
-            "Date": "",
-            "Horaires": "",
-            "Heures": totalHours,
-            "Heures Supp.": totalSupp,
-        });
-
-        // Ligne vide pour séparer les employés
-        detailedData.push({
-            "Employé": "",
-            "Semaine": "",
-            "Jour": "",
-            "Date": "",
-            "Horaires": "",
-            "Heures": "",
-            "Heures Supp.": "",
+        summaryData.push({
+            "Employé": ts.employeeName,
+            "Période": weekStr,
+            "Heures Totales": totalHours,
+            "Heures Normales": normalHours,
+            "Heures Supp.": totalSupp
         });
     });
 
-    // Total général
-    const grandTotalHours = timesheets.reduce((sum, data) => {
-        return sum + data.gridData.flat().filter(Boolean).length * 0.5;
-    }, 0);
+    // Totaux globaux pour le récap
+    const grandTotalHours = summaryData.reduce((sum, row) => sum + row["Heures Totales"], 0);
+    const grandTotalSupp = summaryData.reduce((sum, row) => sum + row["Heures Supp."], 0);
 
-    // En France : Heures supp totales = somme des heures supp de chaque employé (>35h/semaine)
-    const grandTotalSupp = timesheets.reduce((sum, data) => {
-        const employeeHours = data.gridData.flat().filter(Boolean).length * 0.5;
-        return sum + Math.max(0, employeeHours - 35);
-    }, 0);
-
-    detailedData.push({
-        "Employé": "TOTAL GÉNÉRAL",
-        "Semaine": "",
-        "Jour": "",
-        "Date": "",
-        "Horaires": "",
-        "Heures": grandTotalHours,
-        "Heures Supp.": grandTotalSupp,
-    });
-
-    const wsDetailed = XLSX.utils.json_to_sheet(detailedData);
-    wsDetailed["!cols"] = [
-        { wch: 25 },  // Employé
-        { wch: 25 },  // Semaine
-        { wch: 12 },  // Jour
-        { wch: 12 },  // Date
-        { wch: 40 },  // Horaires
-        { wch: 10 },  // Heures
-        { wch: 15 },  // Heures Supp.
-    ];
-    XLSX.utils.book_append_sheet(wb, wsDetailed, "Details");
-
-    // Feuille 2: Résumé par employé
-    const summaryData = timesheets.map((data) => {
-        const { employeeName, weekStartDate, gridData } = data;
-        const weekDates = getWeekDates(weekStartDate);
-        const weekStr = `${weekStartDate.toLocaleDateString("fr-FR")} - ${weekDates[6].toLocaleDateString("fr-FR")}`;
-
-        const totalHours = gridData.flat().filter(Boolean).length * 0.5;
-        // En France : Heures supp = au-delà de 35h par semaine
-        const totalSupp = Math.max(0, totalHours - 35);
-
-        return {
-            "Employé": employeeName,
-            "Semaine": weekStr,
-            "Total Heures": totalHours,
-            "Heures Supp. (>35h)": totalSupp,
-            "Heures Normales": Math.min(totalHours, 35),
-        };
-    });
-
-    // Total du résumé
-    const grandTotalNormales = grandTotalHours - grandTotalSupp;
+    summaryData.push({}); // Ligne vide
     summaryData.push({
-        "Employé": "TOTAL",
-        "Semaine": "",
-        "Total Heures": grandTotalHours,
-        "Heures Supp. (>35h)": grandTotalSupp,
-        "Heures Normales": grandTotalNormales,
+        "Employé": "TOTAL GÉNÉRAL",
+        "Heures Totales": grandTotalHours,
+        "Heures Supp.": grandTotalSupp
     });
 
     const wsSummary = XLSX.utils.json_to_sheet(summaryData);
     wsSummary["!cols"] = [
-        { wch: 25 },  // Employé
-        { wch: 25 },  // Semaine
-        { wch: 15 },  // Total Heures
-        { wch: 20 },  // Heures Supp. (>35h)
-        { wch: 18 },  // Heures Normales
+        { wch: 25 }, // Employé
+        { wch: 35 }, // Période
+        { wch: 15 }, // Totales
+        { wch: 15 }, // Normales
+        { wch: 15 }  // Supp
     ];
-    XLSX.utils.book_append_sheet(wb, wsSummary, "Resume");
+    XLSX.utils.book_append_sheet(wb, wsSummary, "Récapitulatif");
 
-    // Feuille 3: Statistiques
-    const avgHours = grandTotalHours / timesheets.length;
-    const avgSupp = grandTotalSupp / timesheets.length;
 
-    const statsData = [
-        { "Statistique": "Nombre d'employés", "Valeur": timesheets.length },
-        { "Statistique": "Total heures", "Valeur": grandTotalHours.toFixed(2) },
-        { "Statistique": "Total heures supplémentaires", "Valeur": grandTotalSupp.toFixed(2) },
-        { "Statistique": "Moyenne heures par employé", "Valeur": avgHours.toFixed(2) },
-        { "Statistique": "Moyenne heures supp. par employé", "Valeur": avgSupp.toFixed(2) },
-    ];
+    // --- Feuilles par Employé ---
 
-    const wsStats = XLSX.utils.json_to_sheet(statsData);
-    wsStats["!cols"] = [
-        { wch: 35 },  // Statistique
-        { wch: 15 },  // Valeur
-    ];
-    XLSX.utils.book_append_sheet(wb, wsStats, "Statistiques");
+    // Grouper les timesheets par employé
+    const sheetsByEmployee: { [key: string]: TimesheetData[] } = {};
+    sortedTimesheets.forEach(ts => {
+        if (!sheetsByEmployee[ts.employeeName]) {
+            sheetsByEmployee[ts.employeeName] = [];
+        }
+        sheetsByEmployee[ts.employeeName].push(ts);
+    });
 
-    // Sauvegarder le fichier
+    // Créer une feuille pour chaque employé
+    Object.keys(sheetsByEmployee).forEach(empName => {
+        const empTimesheets = sheetsByEmployee[empName];
+        const empSheetData: any[] = [];
+
+        empTimesheets.forEach((ts, index) => {
+            const weekDates = getWeekDates(ts.weekStartDate);
+            // En-tête de la semaine
+            empSheetData.push({
+                "Date": `SEMAINE DU ${ts.weekStartDate.toLocaleDateString("fr-FR")} AU ${weekDates[6].toLocaleDateString("fr-FR")}`,
+                "Jour": "",
+                "Horaires": "",
+                "Heures": ""
+            });
+
+            // Détail jours
+            let weekTotal = 0;
+            weekDates.forEach((date, dayIndex) => {
+                const hours = getDayHours(ts.gridData[dayIndex]);
+                weekTotal += hours;
+
+                empSheetData.push({
+                    "Date": date.toLocaleDateString("fr-FR"),
+                    "Jour": DAYS[dayIndex],
+                    "Horaires": getRangesText(ts.gridData[dayIndex]),
+                    "Heures": hours || "" // Laisser vide si 0 pour lisibilité ? ou mettre 0
+                });
+            });
+
+            // Total semaine
+            const supp = Math.max(0, weekTotal - 35);
+            empSheetData.push({
+                "Date": "TOTAL SEMAINE",
+                "Jour": "",
+                "Horaires": supp > 0 ? `Dont ${supp}h supp.` : "",
+                "Heures": weekTotal
+            });
+
+            // Ligne vide entre les semaines (sauf après la dernière)
+            if (index < empTimesheets.length - 1) {
+                empSheetData.push({});
+            }
+        });
+
+        const wsAtom = XLSX.utils.json_to_sheet(empSheetData);
+
+        // Ajustement largeurs colonnes
+        wsAtom["!cols"] = [
+            { wch: 15 }, // Date
+            { wch: 12 }, // Jour
+            { wch: 40 }, // Horaires
+            { wch: 10 }  // Heures
+        ];
+
+        XLSX.utils.book_append_sheet(wb, wsAtom, sanitizeSheetName(empName));
+    });
+
+    // Sauvegarder
     const date = new Date().toISOString().slice(0, 10);
-    XLSX.writeFile(wb, `releves_heures_consolide_${timesheets.length}_employes_${date}.xlsx`);
+    XLSX.writeFile(wb, `releves_heures_RH_${date}.xlsx`);
 }
