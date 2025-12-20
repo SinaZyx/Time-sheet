@@ -670,10 +670,10 @@ export default function App() {
     setNameError(null);
     try {
       // Mettre à jour le profil
-      const { error: profileError } = await (supabase
-        .from('profiles')
+      // On caste en any pour éviter les erreurs de typage strict sur l'update
+      const { error: profileError } = await (supabase.from('profiles') as any)
         .update({ full_name: trimmed, updated_at: new Date().toISOString() })
-        .eq('id', session?.user.id) as any);
+        .eq('id', session?.user.id);
 
       if (profileError) throw profileError;
 
