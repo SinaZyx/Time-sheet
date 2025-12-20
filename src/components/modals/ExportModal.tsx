@@ -46,11 +46,11 @@ export default function ExportModal({
 
     return (
         <div className="fixed inset-0 bg-black/40 backdrop-blur-sm flex items-center justify-center z-50 px-4">
-            <div className="bg-white rounded-2xl shadow-xl border border-slate-200 w-full max-w-md p-6 relative">
+            <div className="bg-white rounded-2xl shadow-xl border border-slate-200 w-full max-w-md p-4 sm:p-6 relative max-h-[90vh] overflow-y-auto">
                 <div className="flex items-start justify-between mb-4">
                     <div>
                         <h2 className="text-lg font-bold text-slate-800">Exporter des feuilles</h2>
-                        <p className="text-sm text-slate-500">Choisis une période et envoie le PDF.</p>
+                        <p className="text-xs sm:text-sm text-slate-500">Choisis une période et envoie le PDF.</p>
                     </div>
                     <button
                         onClick={onClose}
@@ -60,13 +60,13 @@ export default function ExportModal({
                     </button>
                 </div>
 
-                <div className="space-y-4">
+                <div className="space-y-3 sm:space-y-4">
                     <div>
-                        <label className="block text-sm font-medium text-slate-700 mb-2">Période</label>
+                        <label className="block text-xs sm:text-sm font-medium text-slate-700 mb-1 sm:mb-2">Période</label>
                         <select
                             value={exportPeriod}
                             onChange={(e) => setExportPeriod(e.target.value as 'month' | 'week' | 'custom')}
-                            className="w-full px-3 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 outline-none"
+                            className="w-full px-3 py-2 text-sm border border-slate-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 outline-none"
                         >
                             <option value="month">Mois</option>
                             <option value="week">Semaine</option>
@@ -76,24 +76,24 @@ export default function ExportModal({
 
                     {exportPeriod === 'month' && (
                         <div>
-                            <label className="block text-sm font-medium text-slate-700 mb-2">Mois</label>
+                            <label className="block text-xs sm:text-sm font-medium text-slate-700 mb-1 sm:mb-2">Mois</label>
                             <input
                                 type="month"
                                 value={selectedExportMonth}
                                 onChange={(e) => setSelectedExportMonth(e.target.value)}
-                                className="w-full px-3 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 outline-none"
+                                className="w-full px-3 py-2 text-sm border border-slate-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 outline-none"
                             />
                         </div>
                     )}
 
                     {exportPeriod === 'week' && (
                         <div>
-                            <label className="block text-sm font-medium text-slate-700 mb-2">Semaine (date du lundi)</label>
+                            <label className="block text-xs sm:text-sm font-medium text-slate-700 mb-1 sm:mb-2">Semaine (date du lundi)</label>
                             <input
                                 type="date"
                                 value={selectedExportWeek}
                                 onChange={(e) => setSelectedExportWeek(e.target.value)}
-                                className="w-full px-3 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 outline-none"
+                                className="w-full px-3 py-2 text-sm border border-slate-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 outline-none"
                             />
                         </div>
                     )}
@@ -101,33 +101,33 @@ export default function ExportModal({
                     {exportPeriod === 'custom' && (
                         <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                             <div>
-                                <label className="block text-sm font-medium text-slate-700 mb-2">Date début</label>
+                                <label className="block text-xs sm:text-sm font-medium text-slate-700 mb-1 sm:mb-2">Date début</label>
                                 <input
                                     type="date"
                                     value={exportStartDate}
                                     onChange={(e) => setExportStartDate(e.target.value)}
-                                    className="w-full px-3 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 outline-none"
+                                    className="w-full px-3 py-2 text-sm border border-slate-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 outline-none"
                                 />
                             </div>
                             <div>
-                                <label className="block text-sm font-medium text-slate-700 mb-2">Date fin</label>
+                                <label className="block text-xs sm:text-sm font-medium text-slate-700 mb-1 sm:mb-2">Date fin</label>
                                 <input
                                     type="date"
                                     value={exportEndDate}
                                     onChange={(e) => setExportEndDate(e.target.value)}
-                                    className="w-full px-3 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 outline-none"
+                                    className="w-full px-3 py-2 text-sm border border-slate-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 outline-none"
                                 />
                             </div>
                         </div>
                     )}
 
                     <div>
-                        <label className="block text-sm font-medium text-slate-700 mb-2">Email destinataire</label>
+                        <label className="block text-xs sm:text-sm font-medium text-slate-700 mb-1 sm:mb-2">Email destinataire</label>
                         <input
                             type="email"
                             value={exportRecipient}
                             onChange={(e) => setExportRecipient(e.target.value)}
-                            className="w-full px-3 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 outline-none"
+                            className="w-full px-3 py-2 text-sm border border-slate-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 outline-none"
                             placeholder="rh@entreprise.com"
                         />
                     </div>
@@ -144,25 +144,25 @@ export default function ExportModal({
                     Le PDF sera téléchargé puis Outlook s’ouvrira avec un message prérempli. Pense à joindre le PDF.
                 </p>
 
-                <div className="flex justify-end gap-2 mt-6">
+                <div className="flex flex-col-reverse sm:flex-row justify-end gap-2 mt-6">
                     <button
                         onClick={onClose}
-                        className="px-4 py-2 text-slate-600 hover:text-slate-800 rounded-lg border border-slate-200 hover:bg-slate-50 transition-colors"
+                        className="px-4 py-2 text-sm text-slate-600 hover:text-slate-800 rounded-lg border border-slate-200 hover:bg-slate-50 transition-colors w-full sm:w-auto"
                     >
                         Annuler
                     </button>
                     <button
                         onClick={handlePeriodDownload}
                         disabled={exportingPeriod}
-                        className="px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg font-semibold shadow-sm transition-all disabled:opacity-60 disabled:cursor-not-allowed flex items-center gap-2"
+                        className="px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg font-semibold text-sm shadow-sm transition-all disabled:opacity-60 disabled:cursor-not-allowed flex items-center justify-center gap-2 w-full sm:w-auto"
                     >
                         {exportingPeriod ? <Loader2 className="animate-spin" size={16} /> : <Download size={16} />}
-                        <span className="hidden sm:inline">Télécharger</span> PDF
+                        <span>Télécharger PDF</span>
                     </button>
                     <button
                         onClick={handlePeriodEmail}
                         disabled={exportingPeriod}
-                        className="px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg font-semibold shadow-sm transition-all disabled:opacity-60 disabled:cursor-not-allowed flex items-center gap-2"
+                        className="px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg font-semibold text-sm shadow-sm transition-all disabled:opacity-60 disabled:cursor-not-allowed flex items-center justify-center gap-2 w-full sm:w-auto"
                     >
                         <Mail size={16} /> Outlook
                     </button>
