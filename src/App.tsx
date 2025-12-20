@@ -187,17 +187,18 @@ export default function App() {
           if (name) setCollabName(name);
 
           // Récupérer le rôle de l'utilisateur
-          const { data: profile, error: profileError } = await supabase
+          const { data: profileErrorData, error: profileError } = await (supabase
             .from('profiles')
             .select('role')
             .eq('id', sessionData.user.id)
-            .single();
+            .single() as any);
 
           if (profileError) {
             console.error('[initAuth] Error fetching profile:', profileError);
             if (!isCancelled) setLoadError(profileError.message);
           }
 
+          const profile = profileErrorData as { role: 'employee' | 'admin' } | null;
           console.log('[initAuth] User role:', profile?.role || 'employee');
           if (!isCancelled) setUserRole(profile?.role || 'employee');
         }
@@ -266,11 +267,13 @@ export default function App() {
           console.log('[onAuthStateChange] Fetching user role asynchronously...');
           const fetchRole = async () => {
             try {
-              const { data: profile, error } = await supabase
+              const { data: profileData, error } = await (supabase
                 .from('profiles')
                 .select('role')
                 .eq('id', newSession.user.id)
-                .single();
+                .single() as any);
+
+              const profile = profileData as { role: 'employee' | 'admin' } | null;
 
               if (error) {
                 console.error('[onAuthStateChange] Error fetching profile:', error);
@@ -344,7 +347,7 @@ export default function App() {
         hasData: !!data,
         error: error?.message || null,
         errorCode: error?.code || null,
-        gridDays: (data?.grid_data as any)?.length || 0
+        gridDays: ((data as any)?.grid_data as any)?.length || 0
       });
 
       if (error && error.code !== 'PGRST116') {
@@ -353,8 +356,9 @@ export default function App() {
       }
 
       if (data) {
-        console.log('[fetchWeekData] ✅ Found data, grid has', (data.grid_data as any)?.length, 'days');
-        setGrid(data.grid_data as boolean[][]);
+        const safeData = data as any;
+        console.log('[fetchWeekData] ✅ Found data, grid has', (safeData.grid_data as any)?.length, 'days');
+        setGrid(safeData.grid_data as boolean[][]);
       } else {
         console.log('[fetchWeekData] ⚠️ No data found for this week (PGRST116), creating empty grid');
         setGrid(Array(7).fill(null).map(() => Array(TOTAL_SLOTS).fill(false)));
@@ -666,10 +670,10 @@ export default function App() {
     setNameError(null);
     try {
       // Mettre à jour le profil
-      const { error: profileError } = await supabase
+      const { error: profileError } = await (supabase
         .from('profiles')
         .update({ full_name: trimmed, updated_at: new Date().toISOString() })
-        .eq('id', session?.user.id);
+        .eq('id', session?.user.id) as any);
 
       if (profileError) throw profileError;
 
